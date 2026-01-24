@@ -202,10 +202,10 @@ func ShowError(err error) {
 	fmt.Println(errorStyle.Render(content))
 }
 
-func ShowRetrying(attempt, maxRetries int) {
+func ShowRetrying(attempt int) {
 	fmt.Println()
 	fmt.Println(lipgloss.NewStyle().Foreground(warningColor).Bold(true).Render(
-		fmt.Sprintf("  ⟳ Auto-fixing... (attempt %d/%d)", attempt, maxRetries)))
+		fmt.Sprintf("  ⟳ Auto-fixing... (attempt %d) [Ctrl+C to stop]", attempt)))
 	fmt.Println()
 }
 
@@ -312,14 +312,35 @@ func ShowWelcome() {
 	fmt.Println()
 	animateLogo()
 	fmt.Println()
-	dim.Println("  Natural Shell v2.0 — AI Terminal Assistant")
-	fmt.Println()
-	cyan.Print("  ❯ ")
-	dim.Println("Type naturally: \"find large files\"")
-	blue.Print("  ℹ ")
-	dim.Println("Commands: :help, :diag, :history")
-	magenta.Print("  ⚡ ")
-	dim.Println("Type 'exit' to quit")
+	
+	// Create welcome info box with white border
+	refreshWidth()
+	
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(textColor).
+		Render("Natural Shell v2.0 — AI Terminal Assistant")
+	
+	hint1 := lipgloss.NewStyle().Foreground(primaryColor).Render("❯ ") +
+		lipgloss.NewStyle().Foreground(subtleColor).Render("Type naturally: \"find large files\"")
+	
+	hint2 := lipgloss.NewStyle().Foreground(infoColor).Render("ℹ ") +
+		lipgloss.NewStyle().Foreground(subtleColor).Render("Commands: :help, :diag, :history")
+	
+	hint3 := lipgloss.NewStyle().Foreground(accentColor).Render("⚡ ") +
+		lipgloss.NewStyle().Foreground(subtleColor).Render("Type 'exit' to quit")
+	
+	content := title + "\n\n" + hint1 + "\n" + hint2 + "\n" + hint3
+	
+	welcomeBox := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(textColor).
+		Padding(1, 2).
+		Margin(0, 2).
+		Width(boxWidth).
+		Render(content)
+	
+	fmt.Println(welcomeBox)
 	fmt.Println()
 }
 
@@ -365,6 +386,7 @@ func animateLogo() {
 }
 
 func ShowPrompt() {
+	fmt.Println() // Add spacing before prompt
 	fmt.Print(promptStyle.Render("  nsh "))
 	fmt.Print(promptArrowStyle.Render("❯ "))
 }
