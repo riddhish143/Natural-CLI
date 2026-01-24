@@ -1,0 +1,21 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build artifacts
+/bin
+/pkg
+/tmp
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+
+# OS generated files
+.DS_Store
+nsh
+todo.prd
+

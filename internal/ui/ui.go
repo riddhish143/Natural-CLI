@@ -1,0 +1,534 @@
+package ui
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/fatih/color"
+	"github.com/mattn/go-runewidth"
+	"github.com/riddhishganeshmahajan/nsh/internal/config"
+	"github.com/riddhishganeshmahajan/nsh/internal/llm"
+	"github.com/riddhishganeshmahajan/nsh/internal/safety"
+)
+
+var (
+	cyan    = color.New(color.FgHiCyan)
+	magenta = color.New(color.FgHiMagenta)
+	green   = color.New(color.FgHiGreen)
+	yellow  = color.New(color.FgHiYellow)
+	red     = color.New(color.FgHiRed)
+	blue    = color.New(color.FgHiBlue)
+	white   = color.New(color.FgHiWhite)
+	dim     = color.New(color.Faint)
+)
+
+const (
+	legacyBoxWidth    = 70
+	legacyBoxMinHeight = 6
+)
+
+// Matches all ANSI escape sequences including colors, cursor movement, screen clearing, etc.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]`)
+
+var activeSpinner *AnimatedSpinner
+
+func ShowTranslating() {
+	activeSpinner = NewSpinner("Thinking...")
+	activeSpinner.Start()
+}
+
+func ClearTranslating() {
+	if activeSpinner != nil {
+		activeSpinner.Stop()
+		activeSpinner = nil
+	}
+}
+
+func ShowAnswer(message string) {
+	refreshWidth()
+	content := successTitleStyle.Render(successIcon+" Answer") + "\n\n" + message
+	fmt.Println(answerStyle.Render(content))
+}
+
+func ShowClarify(message string) {
+	refreshWidth()
+	content := warningTitleStyle.Render(warningIcon+" Clarification Needed") + "\n\n" + message
+	fmt.Println(warningStyle.Render(content))
+}
+
+func ShowPlanStart(message string, stepCount int) {
+	refreshWidth()
+	title := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render(fmt.Sprintf("◇ Plan (%d steps)", stepCount))
+	content := title
+	if message != "" {
+		content += "\n\n" + explanationStyle.Render(message)
+	}
+	fmt.Println(infoStyle.Render(content))
+}
+
+func ShowPlanStep(id, tool, purpose string) {
+	magenta.Printf("  ⚡ %s", tool)
+	dim.Printf(" • %s\n", purpose)
+}
+
+func ShowToolResult(tool, output string) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	maxLines := 6
+	if len(lines) > maxLines {
+		for i := 0; i < maxLines; i++ {
+			dim.Printf("    %s\n", safeTruncate(lines[i], 65))
+		}
+		dim.Printf("    ... +%d more lines\n", len(lines)-maxLines)
+	} else {
+		for _, line := range lines {
+			dim.Printf("    %s\n", safeTruncate(line, 65))
+		}
+	}
+}
+
+func ShowToolError(tool, err string) {
+	red.Printf("  ✗ %s: %s\n", tool, err)
+}
+
+func ShowCommand(gen *llm.Generated, result safety.SafetyResult, cfg config.Config) {
+	refreshWidth()
+
+	// Build content
+	title := titleStyle.Render(commandIcon + " Command")
+	cmd := commandTextStyle.Render(gen.Command)
+
+	// Explanation
+	explanation := gen.Explanation
+	if explanation == "" {
+		explanation = gen.Message
+	}
+	explText := ""
+	if explanation != "" {
+		explText = "\n" + explanationStyle.Render(explanation)
+	}
+
+	// Risk indicator
+	riskIcon := successIcon
+	riskStyle := lipgloss.NewStyle().Foreground(successColor)
+	switch result.Risk {
+	case safety.RiskMedium:
+		riskIcon = warningIcon
+		riskStyle = lipgloss.NewStyle().Foreground(warningColor)
+	case safety.RiskHigh, safety.RiskBlocked:
+		riskIcon = errorIcon
+		riskStyle = lipgloss.NewStyle().Foreground(errorColor)
+	}
+
+	riskText := riskStyle.Render(fmt.Sprintf("%s %s", riskIcon, result.Risk))
+	if gen.Confidence > 0 {
+		riskText += lipgloss.NewStyle().Foreground(subtleColor).Render(fmt.Sprintf(" • %.0f%% confidence", gen.Confidence*100))
+	}
+
+	content := title + "\n\n" + cmd + explText + "\n\n" + riskText
+	fmt.Println(commandStyle.Render(content))
+}
+
+func ShowBlocked(gen *llm.Generated, result safety.SafetyResult) {
+	refreshWidth()
+
+	title := errorTitleStyle.Render(blockedIcon + " Command Blocked")
+	cmd := ""
+	if gen.Command != "" {
+		cmd = "\n\n" + lipgloss.NewStyle().Foreground(subtleColor).Render(gen.Command)
+	}
+
+	reasons := ""
+	for _, reason := range result.Reasons {
+		reasons += "\n" + errorIcon + " " + reason
+	}
+
+	footer := "\n\n" + lipgloss.NewStyle().Foreground(subtleColor).Italic(true).Render("Use --force to override (not recommended)")
+
+	content := title + cmd + reasons + footer
+	fmt.Println(blockedStyle.Render(content))
+}
+
+func Confirm(risk safety.RiskLevel) bool {
+	switch risk {
+	case safety.RiskHigh:
+		red.Print("  ⚠ Execute? [y/N]: ")
+	default:
+		fmt.Print("  Execute? [Y/n]: ")
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+
+	if input == "" {
+		if risk == safety.RiskHigh {
+			return false
+		}
+		return true
+	}
+	return input == "y" || input == "yes"
+}
+
+func ShowLearnMode(gen *llm.Generated) {
+	fmt.Println()
+	blue.Println("  📚 Command Breakdown:")
+
+	parts := strings.Fields(gen.Command)
+	if len(parts) > 0 {
+		cyan.Printf("    %s", parts[0])
+		dim.Println(" ← command")
+
+		for i := 1; i < len(parts) && i < 6; i++ {
+			if strings.HasPrefix(parts[i], "-") {
+				yellow.Printf("    %s", parts[i])
+				dim.Println(" ← flag")
+			} else {
+				green.Printf("    %s", parts[i])
+				dim.Println(" ← argument")
+			}
+		}
+	}
+	fmt.Println()
+}
+
+func ShowError(err error) {
+	refreshWidth()
+	content := errorTitleStyle.Render(errorIcon+" Error") + "\n\n" + err.Error()
+	fmt.Println(errorStyle.Render(content))
+}
+
+func ShowRetrying(attempt, maxRetries int) {
+	fmt.Println()
+	fmt.Println(lipgloss.NewStyle().Foreground(warningColor).Bold(true).Render(
+		fmt.Sprintf("  ⟳ Auto-fixing... (attempt %d/%d)", attempt, maxRetries)))
+	fmt.Println()
+}
+
+func ShowSuccess() {
+	fmt.Println(lipgloss.NewStyle().Foreground(successColor).Bold(true).Render("  " + successIcon + " Done"))
+}
+
+func ShowOutput(output string) {
+	ShowOutputWithCode(output, 0)
+}
+
+func ShowOutputWithCode(output string, exitCode int) {
+	// Strip ANSI escape codes and control characters
+	raw := stripControlChars(output)
+	
+	// Use separate check string so we don't destroy meaningful indentation
+	check := strings.TrimSpace(raw)
+	
+	// Preserve leading spaces (e.g., wc column alignment); just drop trailing newlines
+	cleaned := strings.TrimRight(raw, "\n\r")
+	
+	// If no output and command succeeded, skip
+	if check == "" && exitCode == 0 {
+		return
+	}
+	
+	// Show placeholder for empty output on failure
+	if check == "" {
+		cleaned = lipgloss.NewStyle().Foreground(subtleColor).Italic(true).Render("(no output)")
+	}
+	
+	refreshWidth()
+	
+	// Build title
+	title := lipgloss.NewStyle().Bold(true).Foreground(subtleColor).Render("Output")
+	content := title + "\n\n" + cleaned
+	
+	// Choose style based on exit code
+	style := outputStyle
+	if exitCode != 0 {
+		style = outputStyle.Copy().BorderForeground(errorColor)
+		
+		// Add footer with exit code inside the box
+		separatorWidth := boxWidth - 8 // Account for padding and border
+		if separatorWidth < 10 {
+			separatorWidth = 10
+		}
+		separator := lipgloss.NewStyle().Foreground(subtleColor).Render(strings.Repeat("─", separatorWidth))
+		
+		exitCodeText := lipgloss.NewStyle().
+			Foreground(errorColor).
+			Bold(true).
+			Render(fmt.Sprintf("%s Exit code: %d", errorIcon, exitCode))
+		
+		content += "\n\n" + separator + "\n" + exitCodeText
+	} else if exitCode == 0 {
+		// Show success indicator for successful commands
+		separatorWidth := boxWidth - 8
+		if separatorWidth < 10 {
+			separatorWidth = 10
+		}
+		separator := lipgloss.NewStyle().Foreground(subtleColor).Render(strings.Repeat("─", separatorWidth))
+		
+		successText := lipgloss.NewStyle().
+			Foreground(successColor).
+			Bold(true).
+			Render(fmt.Sprintf("%s Success", successIcon))
+		
+		content += "\n\n" + separator + "\n" + successText
+	}
+	
+	fmt.Println(style.Render(content))
+}
+
+func stripControlChars(s string) string {
+	// Remove ANSI escape sequences
+	s = ansiRegex.ReplaceAllString(s, "")
+	
+	// Remove any remaining escape sequences that might have been missed
+	// This catches sequences like \x1b[3J, \x1b[H, etc.
+	escapeSeqRegex := regexp.MustCompile(`\x1b\[[^\x1b]*`)
+	s = escapeSeqRegex.ReplaceAllString(s, "")
+	
+	// Remove standalone escape character followed by brackets
+	s = regexp.MustCompile(`\[[\d;]*[A-Za-z]`).ReplaceAllString(s, "")
+	
+	// Remove other control characters (except newline and tab)
+	var result strings.Builder
+	for _, r := range s {
+		if r == '\n' || r == '\t' || r >= 32 {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
+func ShowExitCode(code int) {
+	if code != 0 {
+		fmt.Println(lipgloss.NewStyle().Foreground(warningColor).Render(fmt.Sprintf("  Exit code: %d", code)))
+	}
+}
+
+func ShowWelcome() {
+	fmt.Println()
+	animateLogo()
+	fmt.Println()
+	dim.Println("  Natural Shell v2.0 — AI Terminal Assistant")
+	fmt.Println()
+	cyan.Print("  ❯ ")
+	dim.Println("Type naturally: \"find large files\"")
+	blue.Print("  ℹ ")
+	dim.Println("Commands: :help, :diag, :history")
+	magenta.Print("  ⚡ ")
+	dim.Println("Type 'exit' to quit")
+	fmt.Println()
+}
+
+func animateLogo() {
+	logo := []string{
+		"  ███╗   ██╗███████╗██╗  ██╗",
+		"  ████╗  ██║██╔════╝██║  ██║",
+		"  ██╔██╗ ██║███████╗███████║",
+		"  ██║╚██╗██║╚════██║██╔══██║",
+		"  ██║ ╚████║███████║██║  ██║",
+		"  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝",
+	}
+
+	colors := []*color.Color{cyan, magenta, blue}
+
+	// Hide cursor during animation
+	fmt.Print("\033[?25l")
+	defer fmt.Print("\033[?25h")
+
+	// Animate each line appearing with a sweep effect
+	for i, line := range logo {
+		c := colors[i%len(colors)]
+		runes := []rune(line)
+		for j := 0; j <= len(runes); j++ {
+			fmt.Print("\r")
+			c.Print(string(runes[:j]))
+			time.Sleep(8 * time.Millisecond)
+		}
+		fmt.Println()
+	}
+
+	// Color wave animation
+	time.Sleep(100 * time.Millisecond)
+	for wave := 0; wave < 2; wave++ {
+		// Move cursor up 6 lines
+		fmt.Print("\033[6A")
+		for i, line := range logo {
+			colorIdx := (i + wave) % len(colors)
+			colors[colorIdx].Println(line)
+			time.Sleep(30 * time.Millisecond)
+		}
+	}
+}
+
+func ShowPrompt() {
+	fmt.Print(promptStyle.Render("  nsh "))
+	fmt.Print(promptArrowStyle.Render("❯ "))
+}
+
+// ============ Legacy Box Drawing (kept for compatibility) ============
+
+func printBox(title, content string, borderColor *color.Color) {
+	lines := wrapTextWidth(content, legacyBoxWidth-6)
+	printBoxWithContent(title, lines, borderColor, white)
+}
+
+func printBoxWithContent(title string, lines []string, borderColor, textColor *color.Color) {
+	innerWidth := legacyBoxWidth - 4 // Account for "│ " and " │"
+
+	// Pad lines to ensure minimum height
+	for len(lines) < legacyBoxMinHeight {
+		lines = append(lines, "")
+	}
+
+	// Top border: ╭─ Title ─────╮
+	borderColor.Print("  ╭─ ")
+	borderColor.Print(title)
+	borderColor.Print(" ")
+	topPadding := legacyBoxWidth - visibleLen(title) - 7
+	for i := 0; i < topPadding; i++ {
+		borderColor.Print("─")
+	}
+	borderColor.Println("╮")
+
+	// Content lines
+	for i, line := range lines {
+		borderColor.Print("  │ ")
+
+		// Clean line for display (replace special chars that cause width issues)
+		cleanLine := normalizeText(line)
+
+		// Truncate if needed
+		if visibleLen(cleanLine) > innerWidth {
+			cleanLine = safeTruncate(cleanLine, innerWidth)
+		}
+
+		// Print the line
+		if i == len(lines)-1 && isRiskLine(line) {
+			textColor.Print(cleanLine)
+		} else {
+			fmt.Print(cleanLine)
+		}
+
+		// Calculate and add padding
+		padding := innerWidth - visibleLen(cleanLine)
+		if padding > 0 {
+			fmt.Print(strings.Repeat(" ", padding))
+		}
+
+		borderColor.Println(" │")
+	}
+
+	// Bottom border: ╰─────────────╯
+	borderColor.Print("  ╰")
+	for i := 0; i < legacyBoxWidth-4; i++ {
+		borderColor.Print("─")
+	}
+	borderColor.Println("╯")
+}
+
+// ============ Text Utilities ============
+
+// visibleLen returns the visible width of a string
+func visibleLen(s string) int {
+	// Remove ANSI codes
+	clean := ansiRegex.ReplaceAllString(s, "")
+	return runewidth.StringWidth(clean)
+}
+
+// normalizeText replaces problematic Unicode characters
+func normalizeText(s string) string {
+	// Replace non-breaking hyphens and other special chars with regular ones
+	s = strings.ReplaceAll(s, "‑", "-")  // non-breaking hyphen
+	s = strings.ReplaceAll(s, "–", "-")  // en dash
+	s = strings.ReplaceAll(s, "—", "-")  // em dash
+	s = strings.ReplaceAll(s, "'", "'")  // curly quote
+	s = strings.ReplaceAll(s, "'", "'")  // curly quote
+	s = strings.ReplaceAll(s, "\u201c", "\"") // left curly quote
+	s = strings.ReplaceAll(s, "\u201d", "\"") // right curly quote
+	return s
+}
+
+// safeTruncate truncates a string to maxWidth visible characters
+func safeTruncate(s string, maxWidth int) string {
+	s = normalizeText(s)
+	if visibleLen(s) <= maxWidth {
+		return s
+	}
+
+	result := ""
+	width := 0
+	for _, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if width+rw > maxWidth-3 {
+			break
+		}
+		result += string(r)
+		width += rw
+	}
+	return result + "..."
+}
+
+// wrapTextWidth wraps text to fit within maxWidth
+func wrapTextWidth(text string, maxWidth int) []string {
+	text = normalizeText(text)
+	var result []string
+
+	paragraphs := strings.Split(text, "\n")
+	for _, para := range paragraphs {
+		if strings.TrimSpace(para) == "" {
+			result = append(result, "")
+			continue
+		}
+
+		words := strings.Fields(para)
+		currentLine := ""
+		currentWidth := 0
+
+		for _, word := range words {
+			wordWidth := runewidth.StringWidth(word)
+
+			if currentWidth+wordWidth+1 > maxWidth && currentLine != "" {
+				result = append(result, currentLine)
+				currentLine = word
+				currentWidth = wordWidth
+			} else {
+				if currentLine != "" {
+					currentLine += " "
+					currentWidth++
+				}
+				currentLine += word
+				currentWidth += wordWidth
+			}
+		}
+
+		if currentLine != "" {
+			result = append(result, currentLine)
+		}
+	}
+
+	return result
+}
+
+func isRiskLine(line string) bool {
+	return strings.HasPrefix(line, "✓") ||
+		strings.HasPrefix(line, "⚠") ||
+		strings.HasPrefix(line, "✗") ||
+		strings.HasPrefix(line, "⛔")
+}
+
+func getRiskColor(risk safety.RiskLevel) *color.Color {
+	switch risk {
+	case safety.RiskLow:
+		return green
+	case safety.RiskMedium:
+		return yellow
+	case safety.RiskHigh, safety.RiskBlocked:
+		return red
+	default:
+		return dim
+	}
+}
