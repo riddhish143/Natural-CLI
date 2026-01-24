@@ -30,11 +30,12 @@ type GeminiConfig struct {
 }
 
 type UIConfig struct {
-	AlwaysConfirm bool `yaml:"always_confirm"`
-	ConfirmMedium bool `yaml:"confirm_medium"`
-	ConfirmHigh   bool `yaml:"confirm_high"`
-	Color         bool `yaml:"color"`
-	LearnMode     bool `yaml:"learn_mode"`
+	AlwaysConfirm        bool    `yaml:"always_confirm"`
+	ConfirmMedium        bool    `yaml:"confirm_medium"`
+	ConfirmHigh          bool    `yaml:"confirm_high"`
+	Color                bool    `yaml:"color"`
+	LearnMode            bool    `yaml:"learn_mode"`
+	MinAutoExecConfidence float64 `yaml:"min_auto_exec_confidence"`
 }
 
 type SafetyConfig struct {
@@ -66,11 +67,12 @@ func DefaultConfig() Config {
 			TimeoutSeconds: 120,
 		},
 		UI: UIConfig{
-			AlwaysConfirm: false,
-			ConfirmMedium: true,
-			ConfirmHigh:   true,
-			Color:         true,
-			LearnMode:     false,
+			AlwaysConfirm:        false,
+			ConfirmMedium:        true,
+			ConfirmHigh:          true,
+			Color:                true,
+			LearnMode:            false,
+			MinAutoExecConfidence: 0.8,
 		},
 		Safety: SafetyConfig{
 			BlockPatterns: []string{

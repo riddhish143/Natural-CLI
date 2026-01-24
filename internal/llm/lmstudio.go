@@ -286,17 +286,23 @@ NEVER put these internal tool names in the "command" field:
 file_list, file_search, file_read, content_search, diagnostics, process_info, port_info, package_search, package_info, web_search, web_fetch, git_status, git_log, git_diff, env_info
 
 EXAMPLES:
-User: "list files" -> {"mode":"command","command":"ls -la"}
-User: "find python files" -> {"mode":"command","command":"find . -name '*.py'"}
+User: "list files" -> {"mode":"command","command":"ls -la","execution":"auto"}
+User: "find python files" -> {"mode":"command","command":"find . -name '*.py'","execution":"auto"}
+User: "delete old logs" -> {"mode":"command","command":"rm *.log","execution":"confirm","execution_reason":"file deletion"}
 WRONG: {"command":"file_list ."} <- NEVER DO THIS
 
 Respond with valid JSON:
-{"mode":"answer|command","message":"explanation","command":"REAL shell command","explanation":"what it does","confidence":0.9}
+{"mode":"answer|command","message":"explanation","command":"REAL shell command","explanation":"what it does","execution":"auto|confirm","execution_reason":"why","confidence":0.9}
+
+EXECUTION POLICY:
+- "execution":"auto" - ONLY for read-only, safe commands (ls, cat, find, grep, ps, pwd, etc.)
+- "execution":"confirm" - For file modifications, installations, sudo, network writes, or anything with side effects
 
 Rules:
 - For "is file X present" or "do we have file X": Check the file list and use mode="answer"
 - For questions like "what is X", use mode="answer"
 - For command requests, use mode="command" with REAL shell commands
+- Always set "execution" for commands. When in doubt, use "confirm"
 - Generate commands compatible with %s
 - Be concise`, envCtx.OS, envCtx.Arch, envCtx.ShellName, osNote, fileIndexNote, envCtx.OS)
 }
