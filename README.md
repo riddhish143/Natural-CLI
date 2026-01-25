@@ -1,4 +1,6 @@
 # nsh — Natural Shell
+<img width="1352" height="508" alt="image" src="https://github.com/user-attachments/assets/9ff8d7fb-d6c1-4a89-b077-313972c1ad32" />
+
 
 `nsh` is a natural-language shell that translates plain English into real, executable shell commands. It can also answer questions, inspect your system, use built-in tools (search, git, web), and execute commands with safety controls.
 
