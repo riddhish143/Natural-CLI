@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -491,14 +492,19 @@ func parseSearchResults(html string) []string {
 	for _, m := range matches {
 		if len(m) >= 3 {
 			title := strings.TrimSpace(m[2])
-			url := m[1]
-			if strings.HasPrefix(url, "//duckduckgo.com/l/?uddg=") {
-				url = strings.TrimPrefix(url, "//duckduckgo.com/l/?uddg=")
-				if idx := strings.Index(url, "&"); idx != -1 {
-					url = url[:idx]
+			rawURL := m[1]
+			if strings.HasPrefix(rawURL, "//duckduckgo.com/l/?uddg=") {
+				rawURL = strings.TrimPrefix(rawURL, "//duckduckgo.com/l/?uddg=")
+				if idx := strings.Index(rawURL, "&"); idx != -1 {
+					rawURL = rawURL[:idx]
 				}
 			}
-			results = append(results, fmt.Sprintf("• %s\n  %s", title, url))
+			// Decode URL-encoded characters
+			decodedURL, err := url.QueryUnescape(rawURL)
+			if err != nil {
+				decodedURL = rawURL
+			}
+			results = append(results, fmt.Sprintf("• %s\n  %s", title, decodedURL))
 		}
 	}
 
@@ -507,7 +513,11 @@ func parseSearchResults(html string) []string {
 		matches = re.FindAllStringSubmatch(html, 5)
 		for _, m := range matches {
 			if len(m) >= 3 && !strings.Contains(m[1], "duckduckgo") {
-				results = append(results, fmt.Sprintf("• %s\n  %s", strings.TrimSpace(m[2]), m[1]))
+				decodedURL, err := url.QueryUnescape(m[1])
+				if err != nil {
+					decodedURL = m[1]
+				}
+				results = append(results, fmt.Sprintf("• %s\n  %s", strings.TrimSpace(m[2]), decodedURL))
 			}
 		}
 	}

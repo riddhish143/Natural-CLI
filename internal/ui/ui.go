@@ -78,6 +78,29 @@ func ShowPlanStart(message string, stepCount int) {
 	fmt.Println(infoStyle.Render(content))
 }
 
+func ShowSearchResults(title, results string) {
+	refreshWidth()
+	titleRendered := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render("🔍 " + title)
+	content := titleRendered + "\n\n" + results
+	
+	// Use a white/text colored border for search results
+	searchStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(textColor).
+		Padding(1, 2).
+		Margin(1, 2).
+		Width(boxWidth)
+	
+	fmt.Println(searchStyle.Render(content))
+}
+
+func ShowToolOutput(title, output string) {
+	refreshWidth()
+	titleRendered := lipgloss.NewStyle().Bold(true).Foreground(subtleColor).Render(title)
+	content := titleRendered + "\n\n" + output
+	fmt.Println(outputStyle.Render(content))
+}
+
 func ShowPlanStep(id, tool, purpose string) {
 	magenta.Printf("  ⚡ %s", tool)
 	dim.Printf(" • %s\n", purpose)
@@ -181,26 +204,239 @@ func Confirm(risk safety.RiskLevel) bool {
 	return input == "y" || input == "yes"
 }
 
-func ShowLearnMode(gen *llm.Generated) {
-	fmt.Println()
-	blue.Println("  📚 Command Breakdown:")
+var shellOps = map[string]bool{
+	"|": true, "||": true, "&&": true, ";": true,
+	">": true, ">>": true, "<": true,
+}
 
-	parts := strings.Fields(gen.Command)
-	if len(parts) > 0 {
-		cyan.Printf("    %s", parts[0])
-		dim.Println(" ← command")
+func tokenizeShellCommand(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
 
-		for i := 1; i < len(parts) && i < 6; i++ {
-			if strings.HasPrefix(parts[i], "-") {
-				yellow.Printf("    %s", parts[i])
-				dim.Println(" ← flag")
-			} else {
-				green.Printf("    %s", parts[i])
-				dim.Println(" ← argument")
-			}
+	var out []string
+	var buf strings.Builder
+
+	inSingle := false
+	inDouble := false
+	escape := false
+
+	flush := func() {
+		if buf.Len() > 0 {
+			out = append(out, buf.String())
+			buf.Reset()
 		}
 	}
-	fmt.Println()
+
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+
+		if escape {
+			buf.WriteRune(ch)
+			escape = false
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escape = true
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			buf.WriteRune(ch)
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			buf.WriteRune(ch)
+			continue
+		}
+
+		if !inSingle && !inDouble {
+			if ch == ' ' || ch == '\t' || ch == '\n' {
+				flush()
+				continue
+			}
+
+			if i+1 < len(runes) {
+				two := string(runes[i : i+2])
+				if two == "&&" || two == "||" || two == ">>" {
+					flush()
+					out = append(out, two)
+					i++
+					continue
+				}
+			}
+			one := string(ch)
+			if one == "|" || one == ";" || one == "<" || one == ">" {
+				flush()
+				out = append(out, one)
+				continue
+			}
+		}
+
+		buf.WriteRune(ch)
+	}
+
+	flush()
+	return out
+}
+
+type tokenKind int
+
+const (
+	kindCommand tokenKind = iota
+	kindFlag
+	kindArg
+	kindOp
+)
+
+func classifyTokens(tokens []string) []tokenKind {
+	kinds := make([]tokenKind, len(tokens))
+	expectCommand := true
+
+	for i, t := range tokens {
+		if shellOps[t] {
+			kinds[i] = kindOp
+			switch t {
+			case "|", "||", "&&", ";":
+				expectCommand = true
+			default:
+				expectCommand = false
+			}
+			continue
+		}
+
+		if expectCommand {
+			kinds[i] = kindCommand
+			expectCommand = false
+			continue
+		}
+
+		if strings.HasPrefix(t, "-") {
+			kinds[i] = kindFlag
+		} else {
+			kinds[i] = kindArg
+		}
+	}
+	return kinds
+}
+
+func ShowLearnMode(gen *llm.Generated) {
+	refreshWidth()
+
+	if gen == nil || strings.TrimSpace(gen.Command) == "" {
+		return
+	}
+
+	cmdTokStyle := lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
+	flagTokStyle := lipgloss.NewStyle().Foreground(warningColor)
+	argTokStyle := lipgloss.NewStyle().Foreground(successColor)
+	opTokStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(subtleColor)
+	sectionTitle := lipgloss.NewStyle().Bold(true).Foreground(infoColor)
+
+	tokens := tokenizeShellCommand(gen.Command)
+	kinds := classifyTokens(tokens)
+
+	// Build colorized command preview
+	var previewParts []string
+	for i, t := range tokens {
+		var st lipgloss.Style
+		switch kinds[i] {
+		case kindCommand:
+			st = cmdTokStyle
+		case kindFlag:
+			st = flagTokStyle
+		case kindArg:
+			st = argTokStyle
+		case kindOp:
+			st = opTokStyle
+		}
+		previewParts = append(previewParts, st.Render(t))
+	}
+	preview := strings.Join(previewParts, " ")
+
+	// Build breakdown rows
+	maxRows := 12
+	rows := []string{}
+	longCount := 0
+
+	rowCount := len(tokens)
+	if rowCount > maxRows {
+		longCount = rowCount - maxRows
+		rowCount = maxRows
+	}
+
+	for i := 0; i < rowCount; i++ {
+		t := tokens[i]
+		var kindLabel string
+		var tok lipgloss.Style
+		switch kinds[i] {
+		case kindCommand:
+			kindLabel = "command"
+			tok = cmdTokStyle
+		case kindFlag:
+			kindLabel = "flag"
+			tok = flagTokStyle
+		case kindArg:
+			kindLabel = "argument"
+			tok = argTokStyle
+		case kindOp:
+			kindLabel = "operator"
+			tok = opTokStyle
+		}
+		rows = append(rows, fmt.Sprintf("  %s  %s", tok.Render(t), labelStyle.Render("← "+kindLabel)))
+	}
+	if longCount > 0 {
+		rows = append(rows, labelStyle.Render(fmt.Sprintf("  … +%d more", longCount)))
+	}
+
+	// Explanation section
+	var expl string
+	if strings.TrimSpace(gen.Explanation) != "" {
+		expl = "\n\n" + sectionTitle.Render("💡 Explanation") + "\n" +
+			lipgloss.NewStyle().Foreground(subtleColor).Render(gen.Explanation)
+	}
+
+	// Alternatives section
+	alts := ""
+	if len(gen.Alternatives) > 0 {
+		var b strings.Builder
+		b.WriteString("\n\n")
+		b.WriteString(sectionTitle.Render("🔄 Alternatives"))
+		b.WriteString("\n")
+		for i, a := range gen.Alternatives {
+			if i >= 3 {
+				b.WriteString(labelStyle.Render(fmt.Sprintf("  … +%d more", len(gen.Alternatives)-i)))
+				break
+			}
+			b.WriteString(fmt.Sprintf("  • %s\n", cmdTokStyle.Render(a.Command)))
+			if a.Explanation != "" {
+				b.WriteString(fmt.Sprintf("    %s\n", labelStyle.Render(a.Explanation)))
+			}
+		}
+		alts = strings.TrimRight(b.String(), "\n")
+	}
+
+	// Compose box content
+	title := sectionTitle.Render("📚 Learn Mode")
+	content := title +
+		"\n\n" + preview +
+		"\n\n" + sectionTitle.Render("Parts") + "\n" + strings.Join(rows, "\n") +
+		expl +
+		alts
+
+	// Use info style box with reduced top margin (no gap between command box)
+	learnStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(infoColor).
+		Padding(1, 2).
+		Margin(0, 2, 1, 2). // top=0, right=2, bottom=1, left=2
+		Width(boxWidth)
+
+	fmt.Println(learnStyle.Render(content))
 }
 
 func ShowError(err error) {
