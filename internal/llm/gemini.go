@@ -201,7 +201,8 @@ func (g *GeminiProvider) Generate(c context.Context, userIntent string, envCtx c
 	}
 
 	text := geminiResp.Candidates[0].Content.Parts[0].Text
-	text = cleanJSONResponse(text)
+	text = CleanModelResponse(text)
+	text = CleanJSONResponse(text)
 
 	var generated Generated
 	if err := json.Unmarshal([]byte(text), &generated); err != nil {
@@ -270,7 +271,8 @@ func (g *GeminiProvider) GenerateWithToolResult(c context.Context, userIntent st
 		return nil, fmt.Errorf("no response")
 	}
 
-	text := cleanJSONResponse(geminiResp.Candidates[0].Content.Parts[0].Text)
+	text := CleanModelResponse(geminiResp.Candidates[0].Content.Parts[0].Text)
+	text = CleanJSONResponse(text)
 	var generated Generated
 	json.Unmarshal([]byte(text), &generated)
 
@@ -328,7 +330,8 @@ func (g *GeminiProvider) GenerateWithCommandError(c context.Context, userIntent 
 		return nil, fmt.Errorf("no response")
 	}
 
-	text := cleanJSONResponse(geminiResp.Candidates[0].Content.Parts[0].Text)
+	text := CleanModelResponse(geminiResp.Candidates[0].Content.Parts[0].Text)
+	text = CleanJSONResponse(text)
 	var generated Generated
 	if err := json.Unmarshal([]byte(text), &generated); err != nil {
 		return nil, err
@@ -390,27 +393,6 @@ Set "execution":"confirm" for anything that modifies files, installs packages, o
 		exitCode,
 		truncate(output, 2000),
 	)
-}
-
-func cleanJSONResponse(text string) string {
-	text = strings.TrimSpace(text)
-
-	if strings.HasPrefix(text, "```json") {
-		text = strings.TrimPrefix(text, "```json")
-	}
-	if strings.HasPrefix(text, "```") {
-		text = strings.TrimPrefix(text, "```")
-	}
-	if strings.HasSuffix(text, "```") {
-		text = strings.TrimSuffix(text, "```")
-	}
-	text = strings.TrimSpace(text)
-
-	if idx := strings.LastIndex(text, "}"); idx != -1 {
-		text = text[:idx+1]
-	}
-
-	return text
 }
 
 func buildPrompt(userIntent string, envCtx ctx.Context, historySummary string) string {

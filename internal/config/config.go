@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -62,8 +63,8 @@ func DefaultConfig() Config {
 			TimeoutSeconds: 30,
 		},
 		LMStudio: LMStudioConfig{
-			BaseURL:        "http://localhost:1234/v1",
-			Model:          "openai/gpt-oss-20b",
+			BaseURL:        "http://localhost:1234/v1", // Standard LM Studio port
+			Model:          "local-model",              // Will use whatever model is loaded
 			TimeoutSeconds: 120,
 		},
 		UI: UIConfig{
@@ -127,20 +128,61 @@ func configPath() string {
 func Load() (Config, error) {
 	cfg := DefaultConfig()
 
+	// 1) Config file overrides defaults
 	path := configPath()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
+	if err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return cfg, err
 		}
+	} else if !os.IsNotExist(err) {
 		return cfg, err
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, err
-	}
+	// 2) Environment variables override config file + defaults
+	applyEnvOverrides(&cfg)
 
 	return cfg, nil
+}
+
+// applyEnvOverrides applies environment variable overrides
+// Priority: env vars > config file > defaults
+//
+// Supported environment variables:
+//   - NSH_PROVIDER: "lmstudio" or "gemini"
+//   - NSH_LMSTUDIO_URL: LM Studio API URL (e.g., "http://localhost:1234/v1")
+//   - NSH_LMSTUDIO_MODEL: Model name (e.g., "deepseek/deepseek-r1-0528-qwen3-8b")
+//   - NSH_LMSTUDIO_TIMEOUT: Timeout in seconds
+//   - NSH_GEMINI_MODEL: Gemini model name
+//   - NSH_GEMINI_TIMEOUT: Gemini timeout in seconds
+func applyEnvOverrides(cfg *Config) {
+	// Provider
+	if v := os.Getenv("NSH_PROVIDER"); v != "" {
+		cfg.Provider = v
+	}
+
+	// LM Studio settings
+	if v := os.Getenv("NSH_LMSTUDIO_URL"); v != "" {
+		cfg.LMStudio.BaseURL = v
+	}
+	if v := os.Getenv("NSH_LMSTUDIO_MODEL"); v != "" {
+		cfg.LMStudio.Model = v
+	}
+	if v := os.Getenv("NSH_LMSTUDIO_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.LMStudio.TimeoutSeconds = n
+		}
+	}
+
+	// Gemini settings
+	if v := os.Getenv("NSH_GEMINI_MODEL"); v != "" {
+		cfg.Gemini.Model = v
+	}
+	if v := os.Getenv("NSH_GEMINI_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Gemini.TimeoutSeconds = n
+		}
+	}
 }
 
 func Save(cfg Config) error {

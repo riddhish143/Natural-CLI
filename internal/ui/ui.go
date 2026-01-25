@@ -51,13 +51,18 @@ func ClearTranslating() {
 
 func ShowAnswer(message string) {
 	refreshWidth()
-	content := successTitleStyle.Render(successIcon+" Answer") + "\n\n" + message
+	// Render markdown with inner width (box - border - padding)
+	innerWidth := boxWidth - 2 - 4 // 2 for border, 4 for padding (2 each side)
+	rendered := renderMarkdown(message, innerWidth)
+	content := successTitleStyle.Render(successIcon+" Answer") + "\n\n" + rendered
 	fmt.Println(answerStyle.Render(content))
 }
 
 func ShowClarify(message string) {
 	refreshWidth()
-	content := warningTitleStyle.Render(warningIcon+" Clarification Needed") + "\n\n" + message
+	innerWidth := boxWidth - 2 - 4
+	rendered := renderMarkdown(message, innerWidth)
+	content := warningTitleStyle.Render(warningIcon+" Clarification Needed") + "\n\n" + rendered
 	fmt.Println(warningStyle.Render(content))
 }
 
@@ -66,7 +71,9 @@ func ShowPlanStart(message string, stepCount int) {
 	title := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render(fmt.Sprintf("◇ Plan (%d steps)", stepCount))
 	content := title
 	if message != "" {
-		content += "\n\n" + explanationStyle.Render(message)
+		innerWidth := boxWidth - 2 - 4
+		rendered := renderMarkdown(message, innerWidth)
+		content += "\n\n" + rendered
 	}
 	fmt.Println(infoStyle.Render(content))
 }

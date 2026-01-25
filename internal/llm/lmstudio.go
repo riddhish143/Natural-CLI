@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/riddhishganeshmahajan/nsh/internal/config"
@@ -22,19 +21,10 @@ type LMStudioProvider struct {
 }
 
 func NewLMStudioProvider(cfg config.Config) (*LMStudioProvider, error) {
-	baseURL := cfg.LMStudio.BaseURL
-	if baseURL == "" {
-		baseURL = "http://localhost:1234/v1"
-	}
-
-	model := cfg.LMStudio.Model
-	if model == "" {
-		model = "local-model"
-	}
-
+	// Config is the single source of truth (defaults + config file + env vars)
 	return &LMStudioProvider{
-		baseURL: baseURL,
-		model:   model,
+		baseURL: cfg.LMStudio.BaseURL,
+		model:   cfg.LMStudio.Model,
 		timeout: time.Duration(cfg.LMStudio.TimeoutSeconds) * time.Second,
 	}, nil
 }
@@ -111,8 +101,8 @@ func (l *LMStudioProvider) Generate(c context.Context, userIntent string, envCtx
 	}
 
 	text := openAIResp.Choices[0].Message.Content
-	text = cleanModelResponse(text)
-	text = cleanJSONResponse(text)
+	text = CleanModelResponse(text)
+	text = CleanJSONResponse(text)
 
 	var generated Generated
 	if err := json.Unmarshal([]byte(text), &generated); err != nil {
@@ -180,7 +170,8 @@ func (l *LMStudioProvider) GenerateWithToolResult(c context.Context, userIntent 
 		return nil, fmt.Errorf("no response")
 	}
 
-	text := cleanJSONResponse(openAIResp.Choices[0].Message.Content)
+	text := CleanModelResponse(openAIResp.Choices[0].Message.Content)
+	text = CleanJSONResponse(text)
 	var generated Generated
 	json.Unmarshal([]byte(text), &generated)
 
@@ -237,7 +228,8 @@ func (l *LMStudioProvider) GenerateWithCommandError(c context.Context, userInten
 		return nil, fmt.Errorf("no response")
 	}
 
-	text := cleanJSONResponse(openAIResp.Choices[0].Message.Content)
+	text := CleanModelResponse(openAIResp.Choices[0].Message.Content)
+	text = CleanJSONResponse(text)
 	var generated Generated
 	if err := json.Unmarshal([]byte(text), &generated); err != nil {
 		return nil, err
@@ -305,37 +297,4 @@ Rules:
 - Always set "execution" for commands. When in doubt, use "confirm"
 - Generate commands compatible with %s
 - Be concise`, envCtx.OS, envCtx.Arch, envCtx.ShellName, osNote, fileIndexNote, envCtx.OS)
-}
-
-
-
-// cleanModelResponse removes model-specific tokens and extracts JSON
-func cleanModelResponse(text string) string {
-	text = strings.TrimSpace(text)
-	
-	// Remove common model prefixes/suffixes
-	prefixes := []string{
-		"<|channel|>final <|constrain|>JSON<|message|>",
-		"<|channel|>",
-		"<|constrain|>",
-		"<|message|>",
-		"<|im_start|>",
-		"<|im_end|>",
-		"```json",
-		"```",
-	}
-	
-	for _, prefix := range prefixes {
-		text = strings.ReplaceAll(text, prefix, "")
-	}
-	
-	// Find JSON object
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	
-	if start != -1 && end != -1 && end > start {
-		text = text[start : end+1]
-	}
-	
-	return strings.TrimSpace(text)
 }

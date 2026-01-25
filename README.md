@@ -1,70 +1,359 @@
-# nsh - Natural Shell v2.0
+# nsh — Natural Shell
 
-A powerful AI-powered terminal assistant that understands natural language and can answer questions, search the web, analyze your system, and execute commands safely.
+`nsh` is a natural-language shell that translates plain English into real, executable shell commands. It can also answer questions, inspect your system, use built-in tools (search, git, web), and execute commands with safety controls.
+
+**Local-first by default:** `nsh` uses **LM Studio** (local, private, free) as the default LLM provider, with **Google Gemini** as an optional cloud alternative.
+
+---
+
+## Why nsh?
+
+- Type what you want: `nsh "find large files in this folder"`
+- Get a safe command + explanation
+- **Auto-run safe commands**, **confirm risky ones**
+- REPL mode for interactive usage: `nsh`
+
+---
 
 ## Features
 
-### 🧠 Intelligent Responses
-- **Answer questions**: "what is kubernetes", "explain docker compose"
-- **Execute commands**: "find all python files", "show disk usage"
-- **Multi-step plans**: Automatically uses tools to gather info before responding
+### Core
+- **Natural language → real shell commands** (not internal tool names)
+- **REPL mode** with quick commands (`:help`, `:history`, etc.)
+- **Built-in tools** for system introspection, file search, web search, and git
 
-### 🔧 Built-in Tools
-- **File operations**: Search, list, and read files
-- **Content search**: Grep/ripgrep integration
-- **System diagnostics**: CPU, memory, disk, processes, network
-- **Process management**: Find processes, check ports
-- **Package management**: Search and info for brew/apt/dnf/pacman
-- **Web search**: Search the web for information
-- **Git integration**: Status, log, diff
+### Safety & Execution
+- **Risk classification**: Low / Medium / High / Blocked
+- **Install command detection**: `brew install`, `apt install`, `pip install`, `npm install`, etc. always require confirmation
+- **LLM-driven execution policy**:
+  - The model returns an execution policy: `auto` or `confirm`
+  - `nsh` will **only escalate** to confirmation (it will not bypass hard-coded safety rules)
+- **Confidence threshold for auto-execution**:
+  - If the model's `confidence` is below `MinAutoExecConfidence`, `nsh` will require confirmation
 
-### 🛡️ Safety Features
-- Risk classification (Low/Medium/High/Blocked)
-- Confirmation prompts for dangerous commands
-- Blocked patterns for destructive operations
-- Sensitive file protection
+### Provider & Configuration
+- **LM Studio is default provider** (local, private)
+- **Gemini as cloud alternative**
+- **Universal configuration via environment variables**
+- **Config file support**: `~/.config/nsh/config.yml` (or `$XDG_CONFIG_HOME/nsh/config.yml`)
+- **Config priority**: **env vars > config file > defaults**
 
-### 📚 History & Context
-- Command history with "do that again" support
-- Context-aware (detects OS, shell, git, project type)
-- Learning mode with command explanations
+### UX & Robustness
+- **Markdown rendering in terminal output** (via `glamour`)
+- **Robust JSON parsing** for imperfect LLM outputs:
+  - Extracts first valid JSON object/array
+  - Repairs common issues (trailing commas, control chars in strings, code fences, token noise)
+
+### Workspace File Index (REPL)
+Fast "does this file exist / where is it" workflows using a workspace index:
+
+| Command | Description |
+|---------|-------------|
+| `:index` / `:files` | Index summary |
+| `:refresh` | Rebuild/refresh index |
+| `:exists <path>` | Check existence (e.g. `:exists package.json`) |
+| `:where <name>` | Find by filename (e.g. `:where auth.go`) |
+| `:ext <ext>` | List by extension (e.g. `:ext go`) |
+
+---
 
 ## Installation
 
-### From Source (recommended)
+### Option A: From Source (Recommended)
 
 ```bash
-# Clone the repository
 git clone https://github.com/riddhishganeshmahajan/nsh.git
 cd nsh
 
-# Install with make
 make install
-
-# Or manually
+# or:
 go build -o nsh ./cmd/nsh
 sudo cp nsh /usr/local/bin/
 ```
 
-### Using Go Install
+### Option B: Go Install
 
 ```bash
 go install github.com/riddhishganeshmahajan/nsh/cmd/nsh@latest
 ```
 
-### Setup
+Verify:
 
 ```bash
-# Set API key for Gemini
-export GEMINI_API_KEY='your-api-key'
+nsh --version
+```
 
-# Or run setup wizard to configure LM Studio (local, free)
+---
+
+## Provider Setup
+
+### Default: LM Studio (Local, Private)
+
+1. Install LM Studio: https://lmstudio.ai  
+2. Start LM Studio and **load a model**
+3. Ensure the server is running (OpenAI-compatible endpoint)
+
+Default expected URL: `http://localhost:1234/v1`
+
+You can then run:
+
+```bash
+nsh "list files"
+```
+
+For guided setup (recommended):
+
+```bash
 nsh --setup
 ```
 
+#### LM Studio Environment Variables
+
+```bash
+export NSH_PROVIDER=lmstudio
+export NSH_LMSTUDIO_URL="http://localhost:1234/v1"
+export NSH_LMSTUDIO_MODEL="local-model"
+export NSH_LMSTUDIO_TIMEOUT="120"
+```
+
+> **Tip:** `NSH_LMSTUDIO_MODEL` should match the model identifier LM Studio exposes. If your LM Studio server ignores `model`, it will typically use the loaded model anyway.
+
+---
+
+### Alternative: Google Gemini (Cloud)
+
+1. Get an API key for Gemini
+2. Export the key (default env var name is `GEMINI_API_KEY`)
+3. Set provider to `gemini`
+
+```bash
+export GEMINI_API_KEY="your-api-key"
+export NSH_PROVIDER=gemini
+```
+
+Run:
+
+```bash
+nsh "what is kubernetes"
+nsh "find all go files"
+```
+
+Optional Gemini env overrides:
+
+```bash
+export NSH_GEMINI_MODEL="gemini-2.5-flash"
+export NSH_GEMINI_TIMEOUT="30"
+```
+
+---
+
 ## Usage
 
+### One-Shot Mode
+
+```bash
+nsh "show disk usage"
+nsh "find all python files under src"
+nsh "what's using port 8080"
+nsh "search the web for golang error handling best practices"
+```
+
+### REPL Mode
+
+```bash
+nsh
+```
+
+Inside the REPL, type naturally or use quick commands:
+
+| Command | Description |
+|---------|-------------|
+| `:help` | Show help |
+| `:history` / `:h` | Command history |
+| `:again` / `:redo` | Repeat last command |
+| `:context` / `:ctx` | Show current context |
+| `:diag` | System diagnostics |
+| `:git` | Git status |
+| `:search <query>` | Web search |
+| `:find <pattern>` | Find files |
+| `:grep <pattern>` | Search file contents |
+| `:port <num>` | Check port usage |
+| `:ps <name>` | Find processes |
+| `:pkg <name>` | Search packages |
+| `:dry` | Toggle dry run mode |
+| `:learn` | Toggle learn mode |
+| `!<cmd>` | Run raw shell command |
+| `exit` / `quit` | Exit nsh |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--dry` | Dry-run mode (don't execute commands) |
+| `--learn` | Show extra explanations / alternatives |
+| `--setup` | Interactive setup wizard |
+| `--force` | Override blocked commands (**dangerous**) |
+| `--version` | Print version |
+
+Examples:
+
+```bash
+nsh --dry "delete all log files"
+nsh --learn "find which process is on port 3000"
+nsh --setup
+```
+
+---
+
+## Execution Policy & Safety
+
+When `nsh` generates a command, it decides whether to run it automatically or require confirmation using three inputs:
+
+1. **Hardcoded safety rules** (blocked/high/medium patterns)
+2. **LLM execution policy** (`execution: auto|confirm`)
+3. **Confidence threshold** (`MinAutoExecConfidence`)
+
+### What Auto-Executes
+
+`nsh` will auto-execute only when it is confident the command is safe and read-only:
+
+- `ls -la`
+- `find . -name '*.go'`
+- `ps aux | grep ...`
+- `df -h`
+- `cat`, `head`, `tail`, `wc`
+
+### What Always Requires Confirmation
+
+Even if the model suggests auto, `nsh` escalates to confirmation for:
+
+- File modification / deletion (`rm`, `mv`, `cp`)
+- `sudo` commands
+- Destructive git operations (`reset --hard`, `clean -fdx`, force push)
+- **Software installs** (detected automatically):
+  - `brew install ...`
+  - `apt install ...` / `apt-get install ...`
+  - `pip install ...` / `pip3 install ...`
+  - `npm install ...` / `yarn add ...` / `pnpm add ...`
+  - `cargo install ...`
+  - `go install ...`
+  - `gem install ...`
+  - And many more package managers
+
+### Risk Levels
+
+| Level | Behavior | Examples |
+|-------|----------|----------|
+| **Low** | Auto-execute (if LLM says `auto`) | `ls`, `cat`, `git status` |
+| **Medium** | Confirm by default | `rm file`, `curl`, `git push` |
+| **High** | Explicit confirm | `rm -rf`, `git reset --hard`, `sudo` |
+| **Blocked** | Never execute | `rm -rf /`, fork bombs, pipe to shell |
+
+---
+
+## Configuration
+
+### Configuration Priority
+
+1. **Environment variables** (highest priority)
+2. **Config file**: `~/.config/nsh/config.yml`
+3. **Built-in defaults** (lowest priority)
+
+### Environment Variables
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `NSH_PROVIDER` | LLM provider: `lmstudio` or `gemini` | `lmstudio` |
+| `NSH_LMSTUDIO_URL` | LM Studio base URL | `http://localhost:1234/v1` |
+| `NSH_LMSTUDIO_MODEL` | LM Studio model name/id | `deepseek/deepseek-r1-0528-qwen3-8b` |
+| `NSH_LMSTUDIO_TIMEOUT` | LM Studio timeout seconds | `120` |
+| `NSH_GEMINI_MODEL` | Gemini model name | `gemini-2.5-flash` |
+| `NSH_GEMINI_TIMEOUT` | Gemini timeout seconds | `30` |
+| `GEMINI_API_KEY` | Gemini API key (default env var) | `...` |
+
+### Full Config File Example
+
+Create `~/.config/nsh/config.yml`:
+
+```yaml
+# LLM provider: "lmstudio" (default) or "gemini"
+provider: lmstudio
+
+lmstudio:
+  # OpenAI-compatible base URL exposed by LM Studio
+  base_url: "http://localhost:1234/v1"
+  # Model identifier (often the currently loaded model in LM Studio)
+  model: "local-model"
+  timeout_seconds: 120
+
+gemini:
+  # nsh reads the API key from this env var (default: GEMINI_API_KEY)
+  api_key_env: "GEMINI_API_KEY"
+  model: "gemini-2.5-flash"
+  timeout_seconds: 30
+
+ui:
+  # Safety confirmations
+  always_confirm: false
+  confirm_medium: true
+  confirm_high: true
+
+  # Output preferences
+  color: true
+  learn_mode: false
+
+  # If model confidence is below this, nsh will ask for confirmation
+  # even for otherwise low-risk commands (0.0 - 1.0)
+  min_auto_exec_confidence: 0.8
+
+exec:
+  dry_run: false
+  use_login_shell: false
+
+history:
+  max_entries: 50
+
+safety:
+  # Hard blocks (never run unless --force)
+  block_patterns:
+    - 'rm\s+-rf\s+/\s*$'
+    - 'rm\s+-rf\s+~'
+    - 'rm\s+-rf\s+\$HOME'
+    - ':\(\)\{\s*:\|:&\s*\};:'
+    - 'mkfs\.'
+    - 'dd\s+if=.*/dev/'
+    - 'curl.*\|\s*(sh|bash|zsh)'
+    - 'wget.*\|\s*(sh|bash|zsh)'
+
+  # High-risk patterns (confirmation required)
+  high_patterns:
+    - '\brm\b.*-rf\b'
+    - '\bgit\b.*reset\s+--hard'
+    - '\bgit\b.*clean\s+-fdx'
+    - '\bgit\b.*push.*--force'
+    - '\bchmod\b.*-R'
+    - '\bchown\b.*-R'
+    - '\bsudo\b'
+
+  # Medium-risk patterns (confirmation recommended)
+  medium_patterns:
+    - '\bcurl\b'
+    - '\bwget\b'
+    - '\bssh\b'
+    - '\bscp\b'
+    - '\brsync\b'
+    - '\brm\b'
+    - '\bgit\b.*push'
+    - '\bgit\b.*commit'
+    - '\bgit\b.*rebase'
+```
+
+---
+
+## Examples
+
 ### Natural Language Queries
+
 ```bash
 # Ask questions
 nsh "what is kubernetes"
@@ -93,95 +382,81 @@ nsh "compress this folder as backup"
 nsh "kill process on port 3000"
 ```
 
-### REPL Mode
-```bash
-$ nsh
-╭──────────────────────────────────────────╮
-│  nsh - Natural Shell v2.0               │
-│  Type naturally or use :help            │
-╰──────────────────────────────────────────╯
-
-nsh> what is docker
-💡 Docker is a platform for developing, shipping, and running applications in containers...
-
-nsh> show disk usage
-Command: df -h
-  Shows disk space usage in human-readable format.
-  Risk: Low
-```
-
-### Quick Commands (REPL)
-| Command | Description |
-|---------|-------------|
-| `:help` | Show help |
-| `:history` | Command history |
-| `:again` | Repeat last command |
-| `:diag` | System diagnostics |
-| `:git` | Git status |
-| `:search <query>` | Web search |
-| `:find <pattern>` | Find files |
-| `:grep <pattern>` | Search contents |
-| `:port <num>` | Check port |
-| `:ps <name>` | Find processes |
-| `:pkg <name>` | Search packages |
-| `!<cmd>` | Raw shell command |
-| `exit` | Exit nsh |
-
-## Configuration
-
-Config file: `~/.config/nsh/config.yml`
-
-```yaml
-gemini:
-  api_key_env: GEMINI_API_KEY
-  model: gemini-2.5-flash
-  timeout_seconds: 30
-
-ui:
-  always_confirm: false
-  confirm_medium: true
-  confirm_high: true
-  learn_mode: false
-
-safety:
-  block_patterns:
-    - 'rm\s+-rf\s+/'
-    - 'rm\s+-rf\s+~'
-```
-
-## Examples
+### LLM-Driven Execution Policy
 
 ```bash
-# Questions
-nsh "what is a kubernetes pod"
-nsh "how do I create a python virtual environment"
-
-# System analysis
-nsh "is my system running low on memory"
-nsh "what processes are using the most CPU"
-nsh "is anything listening on port 5432"
-
-# File operations
-nsh "find all config files"
-nsh "search for 'password' in all files"
-nsh "what's in the readme file"
-
-# Development
-nsh "show git status"
-nsh "list recent commits"
-nsh "find all TODO comments"
-
-# Web research
-nsh "search for react hooks tutorial"
-nsh "look up golang error handling best practices"
+nsh "delete all *.log files"
 ```
 
-## Safety Levels
+Expected behavior:
+- `nsh` shows the generated command (e.g. `rm *.log`)
+- Requires confirmation (LLM sets `execution: "confirm"`)
 
-| Level | Behavior | Examples |
-|-------|----------|----------|
-| **Low** | Auto-execute | `ls`, `cat`, `git status` |
-| **Medium** | Confirm | `rm file`, `curl`, `git push` |
-| **High** | Explicit confirm | `rm -rf`, `git reset --hard` |
-| **Blocked** | Never execute | `rm -rf /`, fork bombs |
+### Install Command Detection
+
+```bash
+nsh "install ripgrep"
+```
+
+If `nsh` generates `brew install ripgrep` or `apt install ripgrep`, it will **always require confirmation** even if the model suggests auto-execution.
+
+### Environment Variable Overrides
+
+Temporarily switch provider without editing config:
+
+```bash
+# Use Gemini
+NSH_PROVIDER=gemini GEMINI_API_KEY="..." nsh "explain docker compose"
+
+# Use LM Studio with specific model
+NSH_LMSTUDIO_MODEL="deepseek/deepseek-r1" nsh "show disk usage"
+```
+
+### File Index Commands (REPL)
+
+```bash
+nsh
+> :index          # Show workspace file summary
+> :exists package.json
+> :where auth.go
+> :ext go
+> :refresh        # Rebuild index
+```
+
+---
+
+## Troubleshooting
+
+### LM Studio Errors
+
+- Ensure LM Studio is running and a model is loaded
+- Confirm the server URL (default `http://localhost:1234/v1`)
+- Check which port LM Studio is using in its settings
+- Try increasing timeout: `NSH_LMSTUDIO_TIMEOUT=180`
+
+### Gemini Errors
+
+- Ensure your API key env var is set: `export GEMINI_API_KEY="..."`
+- Confirm provider: `export NSH_PROVIDER=gemini`
+
+### "Invalid Command: Internal Tool Name"
+
+`nsh` refuses to execute internal tool names as shell commands. Rephrase your request (e.g. "list files" instead of asking for a tool directly).
+
+### JSON Parsing Errors
+
+If you see JSON parsing errors with certain models, the robust parser should handle most cases. If issues persist, try a different model or report the issue.
+
+---
+
+## Security Notes
+
+- `nsh` is designed to be conservative:
+  - Blocked patterns are never executed unless you pass `--force`
+  - Installs always require confirmation
+  - Low confidence escalates to confirmation
+- **Always review commands before confirming**, especially anything involving `sudo`, deletes, or network operations.
+
+---
+
 
