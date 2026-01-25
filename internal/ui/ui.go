@@ -37,7 +37,44 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1
 
 var activeSpinner *AnimatedSpinner
 
+// promptActive tracks if ShowPrompt left cursor on an unfinished line
+var promptActive bool
+
+func ensureNewlineAfterPrompt() {
+	if promptActive {
+		fmt.Println()
+		promptActive = false
+	}
+}
+
+const baseIndent = "  "
+
+var statusLineStyle = lipgloss.NewStyle().Foreground(subtleColor)
+
+// PrintStatusLine prints a consistently indented status message
+func PrintStatusLine(format string, args ...any) {
+	ensureNewlineAfterPrompt()
+	msg := fmt.Sprintf(format, args...)
+	fmt.Printf("%s%s\n", baseIndent, statusLineStyle.Render(msg))
+}
+
+// PrintBlock prints text with baseIndent applied to every line.
+// Use this for multi-line summaries, history, tool outputs, etc.
+func PrintBlock(text string) {
+	ensureNewlineAfterPrompt()
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		fmt.Println(baseIndent)
+		return
+	}
+
+	for _, line := range strings.Split(text, "\n") {
+		fmt.Println(baseIndent + line)
+	}
+}
+
 func ShowTranslating() {
+	ensureNewlineAfterPrompt()
 	activeSpinner = NewSpinner("Thinking...")
 	activeSpinner.Start()
 }
@@ -50,6 +87,7 @@ func ClearTranslating() {
 }
 
 func ShowAnswer(message string) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 	// Render markdown with inner width (box - border - padding)
 	innerWidth := boxWidth - 2 - 4 // 2 for border, 4 for padding (2 each side)
@@ -59,6 +97,7 @@ func ShowAnswer(message string) {
 }
 
 func ShowClarify(message string) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 	innerWidth := boxWidth - 2 - 4
 	rendered := renderMarkdown(message, innerWidth)
@@ -67,6 +106,7 @@ func ShowClarify(message string) {
 }
 
 func ShowPlanStart(message string, stepCount int) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 	title := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render(fmt.Sprintf("◇ Plan (%d steps)", stepCount))
 	content := title
@@ -79,6 +119,7 @@ func ShowPlanStart(message string, stepCount int) {
 }
 
 func ShowSearchResults(title, results string) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 	titleRendered := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render("🔍 " + title)
 	content := titleRendered + "\n\n" + results
@@ -95,6 +136,7 @@ func ShowSearchResults(title, results string) {
 }
 
 func ShowToolOutput(title, output string) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 	titleRendered := lipgloss.NewStyle().Bold(true).Foreground(subtleColor).Render(title)
 	content := titleRendered + "\n\n" + output
@@ -126,6 +168,7 @@ func ShowToolError(tool, err string) {
 }
 
 func ShowCommand(gen *llm.Generated, result safety.SafetyResult, cfg config.Config) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 
 	// Build content
@@ -164,6 +207,7 @@ func ShowCommand(gen *llm.Generated, result safety.SafetyResult, cfg config.Conf
 }
 
 func ShowBlocked(gen *llm.Generated, result safety.SafetyResult) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 
 	title := errorTitleStyle.Render(blockedIcon + " Command Blocked")
@@ -184,11 +228,12 @@ func ShowBlocked(gen *llm.Generated, result safety.SafetyResult) {
 }
 
 func Confirm(risk safety.RiskLevel) bool {
+	// Use fixed-width prefix for alignment: icon or placeholder
 	switch risk {
 	case safety.RiskHigh:
-		red.Print("  ⚠ Execute? [y/N]: ")
+		red.Print(baseIndent + "⚠ Execute? [y/N]: ")
 	default:
-		fmt.Print("  Execute? [Y/n]: ")
+		fmt.Print(baseIndent + "  Execute? [Y/n]: ")
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -440,6 +485,7 @@ func ShowLearnMode(gen *llm.Generated) {
 }
 
 func ShowError(err error) {
+	ensureNewlineAfterPrompt()
 	refreshWidth()
 	content := errorTitleStyle.Render(errorIcon+" Error") + "\n\n" + err.Error()
 	fmt.Println(errorStyle.Render(content))
@@ -632,6 +678,7 @@ func ShowPrompt() {
 	fmt.Println() // Add spacing before prompt
 	fmt.Print(promptStyle.Render("  nsh "))
 	fmt.Print(promptArrowStyle.Render("❯ "))
+	promptActive = true
 }
 
 // ============ Legacy Box Drawing (kept for compatibility) ============
