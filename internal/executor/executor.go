@@ -2,6 +2,7 @@ package executor
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 
@@ -31,15 +32,15 @@ func Execute(command string, envCtx ctx.Context, cfg config.Config) Result {
 	cmd.Dir = envCtx.CWD
 	cmd.Stdin = os.Stdin
 
-	// Capture output
+	// Stream output to UI immediately while still capturing for history
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = io.MultiWriter(&stdout, os.Stdout)
+	cmd.Stderr = io.MultiWriter(&stderr, os.Stderr)
 
 	cmd.Env = os.Environ()
 
 	err := cmd.Run()
-	
+
 	// Combine output
 	output := stdout.String()
 	if stderr.Len() > 0 {
@@ -61,9 +62,8 @@ func Execute(command string, envCtx ctx.Context, cfg config.Config) Result {
 		}
 	}
 
-	// Display output in styled box with appropriate border color
-	// Show box even when empty if command failed
-	if output != "" || exitCode != 0 {
+	// Output already streamed; only show a box if the command failed with no output.
+	if output == "" && exitCode != 0 {
 		ui.ShowOutputWithCode(output, exitCode)
 	}
 
