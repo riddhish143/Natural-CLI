@@ -57,6 +57,71 @@ Fast "does this file exist / where is it" workflows using a workspace index:
 
 ---
 
+## Architecture
+
+`nsh` is organized as a small pipeline: collect runtime context, ask the selected LLM for a structured response, run safety checks, then either answer, ask for confirmation, or execute the generated shell command.
+
+```text
+User input
+  -> Context collection (`internal/context`)
+  -> Provider selection + prompt generation (`internal/llm`, `internal/config`)
+  -> Structured LLM output
+     - mode: `answer` | `command` | `plan` | `clarify`
+     - execution: `auto` | `confirm`
+  -> Safety evaluation (`internal/safety`)
+  -> Execution or follow-up
+     - answer / clarify shown in terminal UI (`internal/ui`)
+     - command executed via shell (`internal/executor`)
+     - tool-backed plans use built-ins from (`internal/tools`)
+  -> History persisted (`internal/history`)
+```
+
+### Request Flow
+
+1. `internal/context` captures the current working directory, shell, OS/arch, git metadata, detected project type, and optional workspace file index.
+2. `internal/config` loads defaults, then merges `~/.config/nsh/config.yml`, then applies environment variable overrides.
+3. `internal/llm` sends the prompt to the active provider:
+   - `LMStudioProvider` for local OpenAI-compatible models
+   - `GeminiProvider` for Google Gemini
+4. The model returns structured JSON, parsed into a `Generated` response with a mode, command/message, confidence, risk hints, and execution policy.
+5. `internal/safety` applies hard blocks, regex-based risk detection, install-command detection, and confirmation rules from config.
+6. If execution is allowed, `internal/executor` runs the command in the user’s shell and current working directory, captures stdout/stderr, and returns the exit code.
+7. `internal/ui` renders answers, plans, commands, confirmations, and command output in the terminal.
+8. `internal/history` stores recent interactions in `~/.config/nsh/history.json`.
+
+### Internal Packages
+
+| Package | Responsibility |
+|---------|----------------|
+| `internal/config` | Defaults, YAML config loading, env var overrides, provider settings |
+| `internal/context` | Runtime environment discovery, git/project detection, file index lifecycle |
+| `internal/llm` | Provider abstraction, prompt construction, JSON cleanup/parsing, structured response model |
+| `internal/safety` | Risk classification, blocked/high/medium checks, install-command confirmation rules |
+| `internal/executor` | Shell command execution, output capture, exit-code reporting |
+| `internal/tools` | Built-in helpers for file search, content search, diagnostics, ports, processes, web/package helpers |
+| `internal/fileindex` | Workspace index build/query/refresh/watch logic for fast REPL file lookups |
+| `internal/ui` | Terminal rendering, markdown output, prompts, spinners, styled command/result views |
+| `internal/history` | Persistent local history for recent commands and outcomes |
+
+### File Index Subsystem
+
+The workspace index is a dedicated subsystem used for fast REPL file queries such as `:exists`, `:where`, and `:ext`.
+
+- In git repos, `internal/fileindex` prefers `git ls-files` plus untracked files for fast, relevant indexing.
+- Outside git repos, it falls back to a filesystem walk.
+- The index stores relative paths, names, extensions, file sizes, modification times, and inferred language metadata.
+- It refreshes when stale, when `HEAD` changes, or when explicitly rebuilt.
+- `fsnotify`-based watching keeps the index updated during REPL sessions.
+
+### Design Notes
+
+- Local-first by default: LM Studio is the default provider and keeps the common path offline/private.
+- Structured generation: providers return JSON instead of free-form text, which makes safety and execution decisions deterministic.
+- Safety before execution: LLM output never bypasses hardcoded blocked patterns or confirmation rules.
+- Terminal-native UX: rendering and execution remain shell-centric rather than abstracting commands into opaque actions.
+
+---
+
 ## Installation
 
 ### Option A: From Source (Recommended)
@@ -458,5 +523,4 @@ If you see JSON parsing errors with certain models, the robust parser should han
 - **Always review commands before confirming**, especially anything involving `sudo`, deletes, or network operations.
 
 ---
-
 
