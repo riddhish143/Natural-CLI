@@ -17,6 +17,148 @@
 
 ---
 
+## Architecture
+
+`nsh` is built with a modular architecture that separates concerns and enables extensibility:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         User Input                          │
+│                    (Natural Language)                       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      UI Layer                               │
+│  • Terminal Interface (Markdown rendering via glamour)      │
+│  • REPL Mode (interactive commands)                         │
+│  • Animations & Styling                                     │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Context Manager                          │
+│  • System Information (OS, shell, environment)              │
+│  • Working Directory Context                                │
+│  • Command History                                          │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     LLM Provider                            │
+│  ┌──────────────┐              ┌──────────────┐            │
+│  │  LM Studio   │              │    Gemini    │            │
+│  │   (Local)    │              │   (Cloud)    │            │
+│  └──────────────┘              └──────────────┘            │
+│  • JSON Response Parsing & Repair                          │
+│  • Confidence Scoring                                       │
+│  • Execution Policy Generation                              │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Safety Checker                           │
+│  • Risk Classification (Low/Medium/High/Blocked)            │
+│  • Pattern Matching (regex-based)                          │
+│  • Install Command Detection                                │
+│  • Confidence Threshold Validation                          │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Command Executor                          │
+│  • Shell Command Execution                                  │
+│  • Output Capture & Streaming                               │
+│  • Error Handling                                           │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Built-in Tools                           │
+│  • File Search (find, grep)                                 │
+│  • Git Operations                                           │
+│  • Web Search                                               │
+│  • System Diagnostics                                       │
+│  • File Index (workspace file tracking)                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Core Components
+
+#### 1. **Configuration (`internal/config/`)**
+- Manages application settings with priority: env vars > config file > defaults
+- Supports `~/.config/nsh/config.yml` for persistent configuration
+- Handles provider-specific settings (LM Studio, Gemini)
+
+#### 2. **Context Manager (`internal/context/`)**
+- Gathers system information (OS, shell, environment variables)
+- Maintains working directory context
+- Provides relevant context to LLM for better command generation
+
+#### 3. **LLM Provider (`internal/llm/`)**
+- **Abstraction Layer**: Common interface for multiple LLM providers
+- **LM Studio Provider**: Local, private inference via OpenAI-compatible API
+- **Gemini Provider**: Cloud-based inference via Google's Gemini API
+- **JSON Cleaning**: Robust parsing that handles imperfect LLM outputs
+  - Extracts first valid JSON object/array
+  - Repairs common issues (trailing commas, control chars, code fences)
+
+#### 4. **Safety Checker (`internal/safety/`)**
+- **Risk Classification**: Analyzes commands using regex patterns
+- **Execution Policy**: Combines LLM suggestions with hardcoded rules
+- **Install Detection**: Automatically identifies package manager commands
+- **Confidence Validation**: Escalates to confirmation if confidence is low
+
+#### 5. **Command Executor (`internal/executor/`)**
+- Executes shell commands with proper error handling
+- Captures and streams output to the user
+- Supports dry-run mode for testing
+
+#### 6. **File Index (`internal/fileindex/`)**
+- **Build**: Creates workspace file index for fast lookups
+- **Query**: Searches indexed files by name, extension, or path
+- **Refresh**: Rebuilds index when files change
+- **Watcher**: Monitors filesystem for changes (optional)
+- **Types**: Defines index data structures
+
+#### 7. **History (`internal/history/`)**
+- Maintains command history for REPL mode
+- Supports history navigation and replay (`:history`, `:again`)
+
+#### 8. **Built-in Tools (`internal/tools/`)**
+- File operations (find, grep)
+- Git integration (status, log, diff)
+- Web search capabilities
+- System diagnostics
+- Process and port management
+
+#### 9. **UI Layer (`internal/ui/`)**
+- **Markdown Rendering**: Uses `glamour` for rich terminal output
+- **Animations**: Loading spinners and progress indicators
+- **Styles**: Consistent color scheme and formatting
+- **REPL Interface**: Interactive command-line interface
+
+### Data Flow
+
+1. **User Input** → UI Layer receives natural language or quick command
+2. **Context Gathering** → System context and history are collected
+3. **LLM Processing** → Provider generates command with execution policy
+4. **Safety Check** → Command is analyzed for risk level
+5. **Execution Decision** → Auto-execute or request confirmation
+6. **Command Execution** → Shell command runs with output capture
+7. **Result Display** → Formatted output shown to user
+8. **History Update** → Command saved for future reference
+
+### Key Design Principles
+
+- **Safety First**: Multiple layers of protection prevent dangerous operations
+- **Local-First**: Default to LM Studio for privacy and offline capability
+- **Extensibility**: Provider abstraction allows easy addition of new LLMs
+- **User Control**: Transparent execution with clear explanations
+- **Robustness**: Handles imperfect LLM outputs gracefully
+
+---
+
 ## Features
 
 ### Core
@@ -460,5 +602,3 @@ If you see JSON parsing errors with certain models, the robust parser should han
 - **Always review commands before confirming**, especially anything involving `sudo`, deletes, or network operations.
 
 ---
-
-
