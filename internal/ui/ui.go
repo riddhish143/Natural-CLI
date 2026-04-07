@@ -633,6 +633,126 @@ func ShowWelcome() {
 	fmt.Println()
 }
 
+// ShowDryRun displays the command that would be executed in dry-run mode
+func ShowDryRun(command string) {
+	ensureNewlineAfterPrompt()
+	refreshWidth()
+	
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(warningColor).
+		Render("🔍 DRY RUN")
+	
+	cmdText := lipgloss.NewStyle().
+		Foreground(primaryColor).
+		Bold(true).
+		Render(command)
+	
+	notice := lipgloss.NewStyle().
+		Foreground(subtleColor).
+		Italic(true).
+		Render("Run without --dry-run to execute")
+	
+	content := title + "\n\n" + "The following command would be executed:\n\n" + cmdText + "\n\n" + notice
+	
+	dryRunStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(warningColor).
+		Padding(1, 2).
+		Margin(1, 2).
+		Width(boxWidth)
+	
+	fmt.Println(dryRunStyle.Render(content))
+}
+
+// AskConfirmation prompts the user to confirm command execution
+func AskConfirmation(command string) bool {
+	ensureNewlineAfterPrompt()
+	refreshWidth()
+	
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(infoColor).
+		Render("⚡ Confirm Execution")
+	
+	cmdText := lipgloss.NewStyle().
+		Foreground(primaryColor).
+		Bold(true).
+		Render(command)
+	
+	content := title + "\n\n" + cmdText
+	
+	confirmStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(infoColor).
+		Padding(1, 2).
+		Margin(1, 2).
+		Width(boxWidth)
+	
+	fmt.Println(confirmStyle.Render(content))
+	fmt.Println()
+	
+	// Prompt for confirmation
+	fmt.Print(baseIndent + lipgloss.NewStyle().Foreground(infoColor).Render("Proceed? [y/N]: "))
+	
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+	
+	return input == "y" || input == "yes"
+}
+
+// ShowRiskLevel displays the risk level of a command
+func ShowRiskLevel(risk safety.RiskLevel) {
+	ensureNewlineAfterPrompt()
+	
+	var icon string
+	var riskText string
+	var style lipgloss.Style
+	
+	switch risk {
+	case safety.RiskLow:
+		icon = successIcon
+		riskText = "Low Risk"
+		style = lipgloss.NewStyle().Foreground(successColor).Bold(true)
+	case safety.RiskMedium:
+		icon = warningIcon
+		riskText = "Medium Risk"
+		style = lipgloss.NewStyle().Foreground(warningColor).Bold(true)
+	case safety.RiskHigh:
+		icon = errorIcon
+		riskText = "High Risk"
+		style = lipgloss.NewStyle().Foreground(errorColor).Bold(true)
+	case safety.RiskBlocked:
+		icon = blockedIcon
+		riskText = "Blocked"
+		style = lipgloss.NewStyle().Foreground(errorColor).Bold(true)
+	default:
+		return
+	}
+	
+	fmt.Println(baseIndent + style.Render(fmt.Sprintf("%s %s", icon, riskText)))
+}
+
+// ShowInfo displays an informational message
+func ShowInfo(message string) {
+	ensureNewlineAfterPrompt()
+	fmt.Println(baseIndent + lipgloss.NewStyle().Foreground(infoColor).Render("ℹ " + message))
+}
+
+// ShowResponse displays the LLM response
+func ShowResponse(response *llm.Generated) {
+	if response.Message != "" && response.Command == "" {
+		ShowAnswer(response.Message)
+	}
+}
+
+// StartThinking starts the thinking animation and returns a stop function
+func StartThinking() func() {
+	ShowTranslating()
+	return ClearTranslating
+}
+
 func animateLogo() {
 	logo := []string{
 		"  ███╗   ██╗███████╗██╗  ██╗",

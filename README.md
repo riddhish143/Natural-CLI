@@ -331,6 +331,8 @@ Inside the REPL, type naturally or use quick commands:
 
 | Flag | Description |
 |------|-------------|
+| `--dry-run`, `-n` | Preview the command without executing it (dry-run mode) |
+| `--confirm` | Always ask for confirmation before executing any command |
 | `--dry` | Dry-run mode (don't execute commands) |
 | `--learn` | Show extra explanations / alternatives |
 | `--setup` | Interactive setup wizard |
@@ -340,12 +342,71 @@ Inside the REPL, type naturally or use quick commands:
 Examples:
 
 ```bash
+# Preview commands without executing
+nsh --dry-run "delete all .log files older than 7 days"
+nsh -n "remove node_modules folders recursively"
+
+# Always confirm before execution
+nsh --confirm "install docker"
+
+# Other flags
 nsh --dry "delete all log files"
 nsh --learn "find which process is on port 3000"
 nsh --setup
 ```
 
 ---
+
+## Dry-Run Mode & Confirmation
+
+### Dry-Run Mode
+
+Dry-run mode allows you to preview commands before execution, providing a safety net for potentially destructive operations:
+
+```bash
+# Preview a command without executing it
+nsh --dry-run "delete all .log files older than 7 days"
+nsh -n "remove node_modules folders recursively"
+
+# Enable globally via environment variable
+export NSH_DRY_RUN=true
+nsh "install docker"  # Will only show the command, not execute
+
+# Enable in config file
+# ~/.config/nsh/config.yml
+exec:
+  dry_run: true
+```
+
+**Use Cases:**
+- Safety net for users unfamiliar with shell commands
+- CI/CD pipelines where you want to log intended commands without executing
+- Learning tool to understand what Natural-CLI is doing
+- Audit logging for compliance purposes
+
+### Confirm Mode
+
+Confirm mode always prompts for confirmation before executing any command, regardless of risk level:
+
+```bash
+# Always ask before executing
+nsh --confirm "list all files"
+nsh --confirm "install docker"
+
+# Enable globally via environment variable
+export NSH_CONFIRM=true
+
+# Enable in config file
+# ~/.config/nsh/config.yml
+exec:
+  confirm: true
+```
+
+**Priority Order:**
+1. `--dry-run` flag (highest - never executes)
+2. `--confirm` flag (always asks)
+3. Safety-based confirmation (risk level dependent)
+4. Auto-execution (lowest - only for safe commands)
 
 ## Execution Policy & Safety
 
@@ -406,6 +467,8 @@ Even if the model suggests auto, `nsh` escalates to confirmation for:
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `NSH_PROVIDER` | LLM provider: `lmstudio` or `gemini` | `lmstudio` |
+| `NSH_DRY_RUN` | Enable dry-run mode globally (`true` or `1`) | `true` |
+| `NSH_CONFIRM` | Enable confirm mode globally (`true` or `1`) | `true` |
 | `NSH_LMSTUDIO_URL` | LM Studio base URL | `http://localhost:1234/v1` |
 | `NSH_LMSTUDIO_MODEL` | LM Studio model name/id | `deepseek/deepseek-r1-0528-qwen3-8b` |
 | `NSH_LMSTUDIO_TIMEOUT` | LM Studio timeout seconds | `120` |
