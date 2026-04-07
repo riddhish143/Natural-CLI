@@ -47,6 +47,7 @@ type SafetyConfig struct {
 
 type ExecConfig struct {
 	DryRun        bool `yaml:"dry_run"`
+	Confirm       bool `yaml:"confirm"`
 	UseLoginShell bool `yaml:"use_login_shell"`
 }
 
@@ -109,6 +110,7 @@ func DefaultConfig() Config {
 		},
 		Exec: ExecConfig{
 			DryRun:        false,
+			Confirm:       false,
 			UseLoginShell: false,
 		},
 		History: HistoryConfig{
