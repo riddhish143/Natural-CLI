@@ -1,2 +1,0 @@
-{"id":"e0bad047-4091-4f77-906a-faa55b16ab1c","ts":"2026-03-29T07:49:52.899Z","path":"/private/var/folders/tf/gghfc3kn04v0g6tk0chbvfp40000gn/T/vibe-kanban-dev/worktrees/25e3-please-update-th/Natural CLI/README.md","version":"1.0.0","taskID":"66fa7ac5-7d34-4a90-839c-35b31c7fa7de"}
-{"id":"710aa52c-6d76-4b7c-b3c1-1a53e4d53699","ts":"2026-03-29T17:48:31.952Z","path":"/private/var/folders/tf/gghfc3kn04v0g6tk0chbvfp40000gn/T/vibe-kanban-dev/worktrees/25e3-please-update-th/Natural CLI/.gitignore","version":"1.0.0","taskID":"a760b327-fb39-4190-975c-471df8bc9747"}
