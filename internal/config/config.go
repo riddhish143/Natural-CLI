@@ -49,8 +49,6 @@ type SafetyConfig struct {
 type ExecConfig struct {
 	DryRun        bool `yaml:"dry_run"`
 	ConfirmMode   bool `yaml:"confirm_mode"`
-	UseLoginShell bool `yaml:"use_login_shell"`
-}
 
 type HistoryConfig struct {
 	MaxEntries int `yaml:"max_entries"`
@@ -111,7 +109,7 @@ func DefaultConfig() Config {
 		},
 		Exec: ExecConfig{
 			DryRun:        false,
-			ConfirmMode:   false,
+			Confirm:       false,
 			UseLoginShell: false,
 		},
 		History: HistoryConfig{
