@@ -28,7 +28,7 @@ var (
 )
 
 const (
-	legacyBoxWidth    = 70
+	legacyBoxWidth     = 70
 	legacyBoxMinHeight = 6
 )
 
@@ -86,11 +86,17 @@ func ClearTranslating() {
 	}
 }
 
+func ShowThinking(message string) {
+	ShowTranslating()
+	if strings.TrimSpace(message) != "" {
+		PrintStatusLine(message)
+	}
+}
+
 func ShowAnswer(message string) {
 	ensureNewlineAfterPrompt()
 	refreshWidth()
-	// Render markdown with inner width (box - border - padding)
-	innerWidth := boxWidth - 2 - 4 // 2 for border, 4 for padding (2 each side)
+	innerWidth := boxWidth - 2 - 4
 	rendered := renderMarkdown(message, innerWidth)
 	content := successTitleStyle.Render(successIcon+" Answer") + "\n\n" + rendered
 	fmt.Println(answerStyle.Render(content))
@@ -123,15 +129,14 @@ func ShowSearchResults(title, results string) {
 	refreshWidth()
 	titleRendered := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render("🔍 " + title)
 	content := titleRendered + "\n\n" + results
-	
-	// Use a white/text colored border for search results
+
 	searchStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(textColor).
 		Padding(1, 2).
 		Margin(1, 2).
 		Width(boxWidth)
-	
+
 	fmt.Println(searchStyle.Render(content))
 }
 
@@ -171,11 +176,9 @@ func ShowCommand(gen *llm.Generated, result safety.SafetyResult, cfg config.Conf
 	ensureNewlineAfterPrompt()
 	refreshWidth()
 
-	// Build content
 	title := titleStyle.Render(commandIcon + " Command")
 	cmd := commandTextStyle.Render(gen.Command)
 
-	// Explanation
 	explanation := gen.Explanation
 	if explanation == "" {
 		explanation = gen.Message
@@ -185,7 +188,6 @@ func ShowCommand(gen *llm.Generated, result safety.SafetyResult, cfg config.Conf
 		explText = "\n" + explanationStyle.Render(explanation)
 	}
 
-	// Risk indicator
 	riskIcon := successIcon
 	riskStyle := lipgloss.NewStyle().Foreground(successColor)
 	switch result.Risk {
@@ -227,8 +229,111 @@ func ShowBlocked(gen *llm.Generated, result safety.SafetyResult) {
 	fmt.Println(blockedStyle.Render(content))
 }
 
+func ShowBlockedCommand(command, reason string) {
+	ensureNewlineAfterPrompt()
+	refreshWidth()
+
+	title := errorTitleStyle.Render(blockedIcon + " Command Blocked")
+	cmd := lipgloss.NewStyle().Foreground(subtleColor).Render(command)
+	detail := lipgloss.NewStyle().Foreground(errorColor).Render(reason)
+	footer := lipgloss.NewStyle().Foreground(subtleColor).Italic(true).Render("Use --force to override (not recommended)")
+
+	content := title + "\n\n" + cmd + "\n\n" + detail + "\n\n" + footer
+	fmt.Println(blockedStyle.Render(content))
+}
+
+func ShowDryRunCommand(command string, result safety.SafetyResult) {
+	ensureNewlineAfterPrompt()
+	refreshWidth()
+
+	title := lipgloss.NewStyle().Bold(true).Foreground(warningColor).Render("⚠ Dry Run")
+	commandLabel := lipgloss.NewStyle().Foreground(subtleColor).Render("Resolved command")
+	commandText := lipgloss.NewStyle().Foreground(infoColor).Bold(true).Render(command)
+
+	riskStyle := lipgloss.NewStyle().Foreground(successColor)
+	switch result.Risk {
+	case safety.RiskMedium:
+		riskStyle = lipgloss.NewStyle().Foreground(warningColor)
+	case safety.RiskHigh, safety.RiskBlocked:
+		riskStyle = lipgloss.NewStyle().Foreground(errorColor)
+	}
+
+	riskLine := lipgloss.NewStyle().Foreground(subtleColor).Render("Risk") + ": " + riskStyle.Render(string(result.Risk))
+
+	reasons := ""
+	if len(result.Reasons) > 0 {
+		var parts []string
+		for _, reason := range result.Reasons {
+			parts = append(parts, "• "+reason)
+		}
+		reasons = "\n\n" + lipgloss.NewStyle().Foreground(subtleColor).Render("Why") + "\n" + strings.Join(parts, "\n")
+	}
+
+	footer := "\n\n" + lipgloss.NewStyle().Foreground(subtleColor).Italic(true).Render("Run without --dry-run to execute.")
+
+	content := title + "\n\n" + commandLabel + "\n" + commandText + "\n\n" + riskLine + reasons + footer
+
+	dryRunStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(warningColor).
+		Padding(1, 2).
+		Margin(1, 2).
+		Width(boxWidth)
+
+	fmt.Println(dryRunStyle.Render(content))
+}
+
+func PromptConfirmation(command string, result safety.SafetyResult) bool {
+	ensureNewlineAfterPrompt()
+	refreshWidth()
+
+	title := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render("Confirm Command")
+	cmd := lipgloss.NewStyle().Foreground(infoColor).Bold(true).Render(command)
+
+	riskColor := successColor
+	switch result.Risk {
+	case safety.RiskMedium:
+		riskColor = warningColor
+	case safety.RiskHigh, safety.RiskBlocked:
+		riskColor = errorColor
+	}
+
+	riskLine := lipgloss.NewStyle().Foreground(subtleColor).Render("Risk") + ": " +
+		lipgloss.NewStyle().Foreground(riskColor).Bold(true).Render(string(result.Risk))
+
+	reasons := ""
+	if len(result.Reasons) > 0 {
+		var parts []string
+		for _, reason := range result.Reasons {
+			parts = append(parts, "• "+reason)
+		}
+		reasons = "\n\n" + lipgloss.NewStyle().Foreground(subtleColor).Render(strings.Join(parts, "\n"))
+	}
+
+	box := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(infoColor).
+		Padding(1, 2).
+		Margin(1, 2).
+		Width(boxWidth).
+		Render(title + "\n\n" + cmd + "\n\n" + riskLine + reasons)
+
+	fmt.Println(box)
+
+	fmt.Print(baseIndent)
+	if result.Risk == safety.RiskHigh || result.Risk == safety.RiskBlocked {
+		red.Print("Proceed? [y/N]: ")
+	} else {
+		yellow.Print("Proceed? [y/N]: ")
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "y" || input == "yes"
+}
+
 func Confirm(risk safety.RiskLevel) bool {
-	// Use fixed-width prefix for alignment: icon or placeholder
 	switch risk {
 	case safety.RiskHigh:
 		red.Print(baseIndent + "⚠ Execute? [y/N]: ")
@@ -247,6 +352,61 @@ func Confirm(risk safety.RiskLevel) bool {
 		return true
 	}
 	return input == "y" || input == "yes"
+}
+
+func ReadInput(prompt string) string {
+	ensureNewlineAfterPrompt()
+	fmt.Print(prompt)
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(input)
+}
+
+func ShowInfo(message string) {
+	ensureNewlineAfterPrompt()
+	PrintStatusLine("%s", message)
+}
+
+func ShowWarning(message string) {
+	ensureNewlineAfterPrompt()
+	yellow.Printf("%s%s\n", baseIndent, message)
+}
+
+func ShowSuccessMessage(message string) {
+	ensureNewlineAfterPrompt()
+	green.Printf("%s%s\n", baseIndent, message)
+}
+
+func ShowExplanation(message string) {
+	ensureNewlineAfterPrompt()
+	refreshWidth()
+	title := lipgloss.NewStyle().Bold(true).Foreground(infoColor).Render("Explanation")
+	content := title + "\n\n" + lipgloss.NewStyle().Foreground(subtleColor).Render(message)
+	fmt.Println(infoStyle.Render(content))
+}
+
+func ShowHistory(entries []string) {
+	ensureNewlineAfterPrompt()
+	if len(entries) == 0 {
+		PrintStatusLine("No history available")
+		return
+	}
+
+	var lines []string
+	for i, entry := range entries {
+		lines = append(lines, fmt.Sprintf("%2d. %s", i+1, entry))
+	}
+	PrintBlock(strings.Join(lines, "\n"))
+}
+
+func ShowContext(message any) {
+	ensureNewlineAfterPrompt()
+	PrintBlock(fmt.Sprintf("%v", message))
+}
+
+func ShowIndexSummary(idx any) {
+	ensureNewlineAfterPrompt()
+	PrintBlock(fmt.Sprintf("%v", idx))
 }
 
 var shellOps = map[string]bool{
@@ -385,7 +545,6 @@ func ShowLearnMode(gen *llm.Generated) {
 	tokens := tokenizeShellCommand(gen.Command)
 	kinds := classifyTokens(tokens)
 
-	// Build colorized command preview
 	var previewParts []string
 	for i, t := range tokens {
 		var st lipgloss.Style
@@ -403,7 +562,6 @@ func ShowLearnMode(gen *llm.Generated) {
 	}
 	preview := strings.Join(previewParts, " ")
 
-	// Build breakdown rows
 	maxRows := 12
 	rows := []string{}
 	longCount := 0
@@ -438,14 +596,12 @@ func ShowLearnMode(gen *llm.Generated) {
 		rows = append(rows, labelStyle.Render(fmt.Sprintf("  … +%d more", longCount)))
 	}
 
-	// Explanation section
 	var expl string
 	if strings.TrimSpace(gen.Explanation) != "" {
 		expl = "\n\n" + sectionTitle.Render("💡 Explanation") + "\n" +
 			lipgloss.NewStyle().Foreground(subtleColor).Render(gen.Explanation)
 	}
 
-	// Alternatives section
 	alts := ""
 	if len(gen.Alternatives) > 0 {
 		var b strings.Builder
@@ -465,7 +621,6 @@ func ShowLearnMode(gen *llm.Generated) {
 		alts = strings.TrimRight(b.String(), "\n")
 	}
 
-	// Compose box content
 	title := sectionTitle.Render("📚 Learn Mode")
 	content := title +
 		"\n\n" + preview +
@@ -473,12 +628,11 @@ func ShowLearnMode(gen *llm.Generated) {
 		expl +
 		alts
 
-	// Use info style box with reduced top margin (no gap between command box)
 	learnStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(infoColor).
 		Padding(1, 2).
-		Margin(0, 2, 1, 2). // top=0, right=2, bottom=1, left=2
+		Margin(0, 2, 1, 2).
 		Width(boxWidth)
 
 	fmt.Println(learnStyle.Render(content))
@@ -507,81 +661,65 @@ func ShowOutput(output string) {
 }
 
 func ShowOutputWithCode(output string, exitCode int) {
-	// Strip ANSI escape codes and control characters
 	raw := stripControlChars(output)
-	
-	// Use separate check string so we don't destroy meaningful indentation
 	check := strings.TrimSpace(raw)
-	
-	// Preserve leading spaces (e.g., wc column alignment); just drop trailing newlines
 	cleaned := strings.TrimRight(raw, "\n\r")
-	
-	// If no output and command succeeded, skip
+
 	if check == "" && exitCode == 0 {
 		return
 	}
-	
-	// Show placeholder for empty output on failure
+
 	if check == "" {
 		cleaned = lipgloss.NewStyle().Foreground(subtleColor).Italic(true).Render("(no output)")
 	}
-	
+
 	refreshWidth()
-	
-	// Build title
+
 	title := lipgloss.NewStyle().Bold(true).Foreground(subtleColor).Render("Output")
 	content := title + "\n\n" + cleaned
-	
-	// Choose style based on exit code
+
 	style := outputStyle
 	if exitCode != 0 {
 		style = outputStyle.Copy().BorderForeground(errorColor)
-		
-		// Add footer with exit code inside the box
-		separatorWidth := boxWidth - 8 // Account for padding and border
-		if separatorWidth < 10 {
-			separatorWidth = 10
-		}
-		separator := lipgloss.NewStyle().Foreground(subtleColor).Render(strings.Repeat("─", separatorWidth))
-		
-		exitCodeText := lipgloss.NewStyle().
-			Foreground(errorColor).
-			Bold(true).
-			Render(fmt.Sprintf("%s Exit code: %d", errorIcon, exitCode))
-		
-		content += "\n\n" + separator + "\n" + exitCodeText
-	} else if exitCode == 0 {
-		// Show success indicator for successful commands
+
 		separatorWidth := boxWidth - 8
 		if separatorWidth < 10 {
 			separatorWidth = 10
 		}
 		separator := lipgloss.NewStyle().Foreground(subtleColor).Render(strings.Repeat("─", separatorWidth))
-		
+
+		exitCodeText := lipgloss.NewStyle().
+			Foreground(errorColor).
+			Bold(true).
+			Render(fmt.Sprintf("%s Exit code: %d", errorIcon, exitCode))
+
+		content += "\n\n" + separator + "\n" + exitCodeText
+	} else if exitCode == 0 {
+		separatorWidth := boxWidth - 8
+		if separatorWidth < 10 {
+			separatorWidth = 10
+		}
+		separator := lipgloss.NewStyle().Foreground(subtleColor).Render(strings.Repeat("─", separatorWidth))
+
 		successText := lipgloss.NewStyle().
 			Foreground(successColor).
 			Bold(true).
 			Render(fmt.Sprintf("%s Success", successIcon))
-		
+
 		content += "\n\n" + separator + "\n" + successText
 	}
-	
+
 	fmt.Println(style.Render(content))
 }
 
 func stripControlChars(s string) string {
-	// Remove ANSI escape sequences
 	s = ansiRegex.ReplaceAllString(s, "")
-	
-	// Remove any remaining escape sequences that might have been missed
-	// This catches sequences like \x1b[3J, \x1b[H, etc.
+
 	escapeSeqRegex := regexp.MustCompile(`\x1b\[[^\x1b]*`)
 	s = escapeSeqRegex.ReplaceAllString(s, "")
-	
-	// Remove standalone escape character followed by brackets
+
 	s = regexp.MustCompile(`\[[\d;]*[A-Za-z]`).ReplaceAllString(s, "")
-	
-	// Remove other control characters (except newline and tab)
+
 	var result strings.Builder
 	for _, r := range s {
 		if r == '\n' || r == '\t' || r >= 32 {
@@ -601,26 +739,25 @@ func ShowWelcome() {
 	fmt.Println()
 	animateLogo()
 	fmt.Println()
-	
-	// Create welcome info box with white border
+
 	refreshWidth()
-	
+
 	title := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(textColor).
 		Render("Natural Shell v2.0 — AI Terminal Assistant")
-	
+
 	hint1 := lipgloss.NewStyle().Foreground(primaryColor).Render("❯ ") +
 		lipgloss.NewStyle().Foreground(subtleColor).Render("Type naturally: \"find large files\"")
-	
+
 	hint2 := lipgloss.NewStyle().Foreground(infoColor).Render("ℹ ") +
 		lipgloss.NewStyle().Foreground(subtleColor).Render("Commands: :help, :diag, :history")
-	
+
 	hint3 := lipgloss.NewStyle().Foreground(accentColor).Render("⚡ ") +
 		lipgloss.NewStyle().Foreground(subtleColor).Render("Type 'exit' to quit")
-	
+
 	content := title + "\n\n" + hint1 + "\n" + hint2 + "\n" + hint3
-	
+
 	welcomeBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(textColor).
@@ -628,7 +765,7 @@ func ShowWelcome() {
 		Margin(0, 2).
 		Width(boxWidth).
 		Render(content)
-	
+
 	fmt.Println(welcomeBox)
 	fmt.Println()
 }
@@ -765,11 +902,9 @@ func animateLogo() {
 
 	colors := []*color.Color{cyan, magenta, blue}
 
-	// Hide cursor during animation
 	fmt.Print("\033[?25l")
 	defer fmt.Print("\033[?25h")
 
-	// Animate each line appearing with a sweep effect
 	for i, line := range logo {
 		c := colors[i%len(colors)]
 		runes := []rune(line)
@@ -781,10 +916,8 @@ func animateLogo() {
 		fmt.Println()
 	}
 
-	// Color wave animation
 	time.Sleep(100 * time.Millisecond)
 	for wave := 0; wave < 2; wave++ {
-		// Move cursor up 6 lines
 		fmt.Print("\033[6A")
 		for i, line := range logo {
 			colorIdx := (i + wave) % len(colors)
@@ -795,7 +928,7 @@ func animateLogo() {
 }
 
 func ShowPrompt() {
-	fmt.Println() // Add spacing before prompt
+	fmt.Println()
 	fmt.Print(promptStyle.Render("  nsh "))
 	fmt.Print(promptArrowStyle.Render("❯ "))
 	promptActive = true
@@ -809,14 +942,12 @@ func printBox(title, content string, borderColor *color.Color) {
 }
 
 func printBoxWithContent(title string, lines []string, borderColor, textColor *color.Color) {
-	innerWidth := legacyBoxWidth - 4 // Account for "│ " and " │"
+	innerWidth := legacyBoxWidth - 4
 
-	// Pad lines to ensure minimum height
 	for len(lines) < legacyBoxMinHeight {
 		lines = append(lines, "")
 	}
 
-	// Top border: ╭─ Title ─────╮
 	borderColor.Print("  ╭─ ")
 	borderColor.Print(title)
 	borderColor.Print(" ")
@@ -826,26 +957,21 @@ func printBoxWithContent(title string, lines []string, borderColor, textColor *c
 	}
 	borderColor.Println("╮")
 
-	// Content lines
 	for i, line := range lines {
 		borderColor.Print("  │ ")
 
-		// Clean line for display (replace special chars that cause width issues)
 		cleanLine := normalizeText(line)
 
-		// Truncate if needed
 		if visibleLen(cleanLine) > innerWidth {
 			cleanLine = safeTruncate(cleanLine, innerWidth)
 		}
 
-		// Print the line
 		if i == len(lines)-1 && isRiskLine(line) {
 			textColor.Print(cleanLine)
 		} else {
 			fmt.Print(cleanLine)
 		}
 
-		// Calculate and add padding
 		padding := innerWidth - visibleLen(cleanLine)
 		if padding > 0 {
 			fmt.Print(strings.Repeat(" ", padding))
@@ -854,7 +980,6 @@ func printBoxWithContent(title string, lines []string, borderColor, textColor *c
 		borderColor.Println(" │")
 	}
 
-	// Bottom border: ╰─────────────╯
 	borderColor.Print("  ╰")
 	for i := 0; i < legacyBoxWidth-4; i++ {
 		borderColor.Print("─")
@@ -864,27 +989,22 @@ func printBoxWithContent(title string, lines []string, borderColor, textColor *c
 
 // ============ Text Utilities ============
 
-// visibleLen returns the visible width of a string
 func visibleLen(s string) int {
-	// Remove ANSI codes
 	clean := ansiRegex.ReplaceAllString(s, "")
 	return runewidth.StringWidth(clean)
 }
 
-// normalizeText replaces problematic Unicode characters
 func normalizeText(s string) string {
-	// Replace non-breaking hyphens and other special chars with regular ones
-	s = strings.ReplaceAll(s, "‑", "-")  // non-breaking hyphen
-	s = strings.ReplaceAll(s, "–", "-")  // en dash
-	s = strings.ReplaceAll(s, "—", "-")  // em dash
-	s = strings.ReplaceAll(s, "'", "'")  // curly quote
-	s = strings.ReplaceAll(s, "'", "'")  // curly quote
-	s = strings.ReplaceAll(s, "\u201c", "\"") // left curly quote
-	s = strings.ReplaceAll(s, "\u201d", "\"") // right curly quote
+	s = strings.ReplaceAll(s, "‑", "-")
+	s = strings.ReplaceAll(s, "–", "-")
+	s = strings.ReplaceAll(s, "—", "-")
+	s = strings.ReplaceAll(s, "'", "'")
+	s = strings.ReplaceAll(s, "'", "'")
+	s = strings.ReplaceAll(s, "\u201c", "\"")
+	s = strings.ReplaceAll(s, "\u201d", "\"")
 	return s
 }
 
-// safeTruncate truncates a string to maxWidth visible characters
 func safeTruncate(s string, maxWidth int) string {
 	s = normalizeText(s)
 	if visibleLen(s) <= maxWidth {
@@ -904,7 +1024,6 @@ func safeTruncate(s string, maxWidth int) string {
 	return result + "..."
 }
 
-// wrapTextWidth wraps text to fit within maxWidth
 func wrapTextWidth(text string, maxWidth int) []string {
 	text = normalizeText(text)
 	var result []string
