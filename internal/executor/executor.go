@@ -7,6 +7,7 @@ import (
 
 	"github.com/riddhishganeshmahajan/nsh/internal/config"
 	ctx "github.com/riddhishganeshmahajan/nsh/internal/context"
+	"github.com/riddhishganeshmahajan/nsh/internal/safety"
 	"github.com/riddhishganeshmahajan/nsh/internal/ui"
 )
 
@@ -17,11 +18,6 @@ type Result struct {
 }
 
 func Execute(command string, envCtx ctx.Context, cfg config.Config) Result {
-	if cfg.Exec.DryRun {
-		ui.ShowOutput("[DRY RUN] Would execute: " + command)
-		return Result{ExitCode: 0}
-	}
-
 	shellArgs := []string{"-c", command}
 	if cfg.Exec.UseLoginShell {
 		shellArgs = []string{"-l", "-c", command}
@@ -31,16 +27,13 @@ func Execute(command string, envCtx ctx.Context, cfg config.Config) Result {
 	cmd.Dir = envCtx.CWD
 	cmd.Stdin = os.Stdin
 
-	// Capture output
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-
 	cmd.Env = os.Environ()
 
 	err := cmd.Run()
-	
-	// Combine output
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		if output != "" {
@@ -49,7 +42,6 @@ func Execute(command string, envCtx ctx.Context, cfg config.Config) Result {
 		output += stderr.String()
 	}
 
-	// Determine exit code first
 	exitCode := 0
 	var execErr error
 	if err != nil {
@@ -61,11 +53,25 @@ func Execute(command string, envCtx ctx.Context, cfg config.Config) Result {
 		}
 	}
 
-	// Display output in styled box with appropriate border color
-	// Show box even when empty if command failed
 	if output != "" || exitCode != 0 {
 		ui.ShowOutputWithCode(output, exitCode)
 	}
 
 	return Result{ExitCode: exitCode, Output: output, Error: execErr}
+}
+
+func ExecuteWithConfirmation(command string, envCtx ctx.Context, cfg config.Config, result safety.SafetyResult, needsConfirm bool) Result {
+	if cfg.Exec.DryRun {
+		ui.ShowDryRunCommand(command, result)
+		return Result{ExitCode: 0}
+	}
+
+	if needsConfirm {
+		if !ui.PromptConfirmation(command, result) {
+			ui.ShowWarning("Command cancelled.")
+			return Result{ExitCode: 130}
+		}
+	}
+
+	return Execute(command, envCtx, cfg)
 }

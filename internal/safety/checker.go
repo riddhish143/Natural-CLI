@@ -95,7 +95,6 @@ func Check(gen CommandInfo, cfg config.Config) SafetyResult {
 		}
 	}
 
-	// Check for software installation commands - always require confirmation
 	if isInstall, reason := isInstallCommand(cmd); isInstall {
 		if result.Risk == RiskLow {
 			result.Risk = RiskMedium
@@ -122,6 +121,25 @@ func Check(gen CommandInfo, cfg config.Config) SafetyResult {
 	return result
 }
 
+func ShouldConfirm(result SafetyResult, cfg config.Config, confidence float64) bool {
+	if cfg.Exec.DryRun {
+		return false
+	}
+	if cfg.Exec.ConfirmMode {
+		return true
+	}
+	if !result.AllowExecute {
+		return false
+	}
+	if result.RequiresConfirm {
+		return true
+	}
+	if confidence > 0 && confidence < cfg.UI.MinAutoExecConfidence {
+		return true
+	}
+	return false
+}
+
 func containsRiskyKeyword(s string) bool {
 	keywords := []string{
 		"delete", "remove", "destroy", "overwrite", "dangerous",
@@ -136,7 +154,6 @@ func containsRiskyKeyword(s string) bool {
 	return false
 }
 
-// Install command patterns - these always require confirmation
 var installPatterns = []struct {
 	pattern *regexp.Regexp
 	reason  string

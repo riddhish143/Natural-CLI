@@ -4,18 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Provider string        `yaml:"provider"` // "gemini" or "lmstudio"
-	Gemini   GeminiConfig  `yaml:"gemini"`
+	Provider string         `yaml:"provider"` // "gemini" or "lmstudio"
+	Gemini   GeminiConfig   `yaml:"gemini"`
 	LMStudio LMStudioConfig `yaml:"lmstudio"`
-	UI       UIConfig      `yaml:"ui"`
-	Safety   SafetyConfig  `yaml:"safety"`
-	Exec     ExecConfig    `yaml:"exec"`
-	History  HistoryConfig `yaml:"history"`
+	UI       UIConfig       `yaml:"ui"`
+	Safety   SafetyConfig   `yaml:"safety"`
+	Exec     ExecConfig     `yaml:"exec"`
+	History  HistoryConfig  `yaml:"history"`
 }
 
 type LMStudioConfig struct {
@@ -31,11 +32,11 @@ type GeminiConfig struct {
 }
 
 type UIConfig struct {
-	AlwaysConfirm        bool    `yaml:"always_confirm"`
-	ConfirmMedium        bool    `yaml:"confirm_medium"`
-	ConfirmHigh          bool    `yaml:"confirm_high"`
-	Color                bool    `yaml:"color"`
-	LearnMode            bool    `yaml:"learn_mode"`
+	AlwaysConfirm         bool    `yaml:"always_confirm"`
+	ConfirmMedium         bool    `yaml:"confirm_medium"`
+	ConfirmHigh           bool    `yaml:"confirm_high"`
+	Color                 bool    `yaml:"color"`
+	LearnMode             bool    `yaml:"learn_mode"`
 	MinAutoExecConfidence float64 `yaml:"min_auto_exec_confidence"`
 }
 
@@ -47,6 +48,7 @@ type SafetyConfig struct {
 
 type ExecConfig struct {
 	DryRun        bool `yaml:"dry_run"`
+	ConfirmMode   bool `yaml:"confirm_mode"`
 	UseLoginShell bool `yaml:"use_login_shell"`
 }
 
@@ -68,11 +70,11 @@ func DefaultConfig() Config {
 			TimeoutSeconds: 120,
 		},
 		UI: UIConfig{
-			AlwaysConfirm:        false,
-			ConfirmMedium:        true,
-			ConfirmHigh:          true,
-			Color:                true,
-			LearnMode:            false,
+			AlwaysConfirm:         false,
+			ConfirmMedium:         true,
+			ConfirmHigh:           true,
+			Color:                 true,
+			LearnMode:             false,
 			MinAutoExecConfidence: 0.8,
 		},
 		Safety: SafetyConfig{
@@ -109,6 +111,7 @@ func DefaultConfig() Config {
 		},
 		Exec: ExecConfig{
 			DryRun:        false,
+			ConfirmMode:   false,
 			UseLoginShell: false,
 		},
 		History: HistoryConfig{
@@ -128,7 +131,6 @@ func configPath() string {
 func Load() (Config, error) {
 	cfg := DefaultConfig()
 
-	// 1) Config file overrides defaults
 	path := configPath()
 	data, err := os.ReadFile(path)
 	if err == nil {
@@ -139,7 +141,6 @@ func Load() (Config, error) {
 		return cfg, err
 	}
 
-	// 2) Environment variables override config file + defaults
 	applyEnvOverrides(&cfg)
 
 	return cfg, nil
@@ -155,13 +156,13 @@ func Load() (Config, error) {
 //   - NSH_LMSTUDIO_TIMEOUT: Timeout in seconds
 //   - NSH_GEMINI_MODEL: Gemini model name
 //   - NSH_GEMINI_TIMEOUT: Gemini timeout in seconds
+//   - NSH_DRY_RUN: true|false
+//   - NSH_CONFIRM_MODE: true|false
 func applyEnvOverrides(cfg *Config) {
-	// Provider
 	if v := os.Getenv("NSH_PROVIDER"); v != "" {
 		cfg.Provider = v
 	}
 
-	// LM Studio settings
 	if v := os.Getenv("NSH_LMSTUDIO_URL"); v != "" {
 		cfg.LMStudio.BaseURL = v
 	}
@@ -174,7 +175,6 @@ func applyEnvOverrides(cfg *Config) {
 		}
 	}
 
-	// Gemini settings
 	if v := os.Getenv("NSH_GEMINI_MODEL"); v != "" {
 		cfg.Gemini.Model = v
 	}
@@ -182,6 +182,28 @@ func applyEnvOverrides(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.Gemini.TimeoutSeconds = n
 		}
+	}
+
+	if v := os.Getenv("NSH_DRY_RUN"); v != "" {
+		if b, ok := parseBool(v); ok {
+			cfg.Exec.DryRun = b
+		}
+	}
+	if v := os.Getenv("NSH_CONFIRM_MODE"); v != "" {
+		if b, ok := parseBool(v); ok {
+			cfg.Exec.ConfirmMode = b
+		}
+	}
+}
+
+func parseBool(value string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on":
+		return true, true
+	case "0", "false", "no", "n", "off":
+		return false, true
+	default:
+		return false, false
 	}
 }
 
